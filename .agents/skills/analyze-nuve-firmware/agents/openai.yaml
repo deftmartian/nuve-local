@@ -1,0 +1,4 @@
+interface:
+  display_name: "Analyze Nuve Firmware"
+  short_description: "Recover Nuve firmware behavior and wire contracts"
+  default_prompt: "Use $analyze-nuve-firmware to recover and verify a behavior from an exact appStherm firmware binary."

@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Nuve Local thermostat icon">
+  <defs>
+    <linearGradient id="face" x1="40" y1="24" x2="216" y2="232" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#243447"/>
+      <stop offset="1" stop-color="#101820"/>
+    </linearGradient>
+  </defs>
+  <circle cx="128" cy="128" r="126" fill="url(#face)"/>
+  <circle cx="128" cy="128" r="86" fill="none" stroke="#d9e7ef" stroke-width="12"/>
+  <path d="M65 81A86 86 0 0 1 128 42" fill="none" stroke="#30c7e8" stroke-linecap="round" stroke-width="12"/>
+  <path d="M191 175A86 86 0 0 1 128 214" fill="none" stroke="#ffad42" stroke-linecap="round" stroke-width="12"/>
+  <path d="M96 159V97h12l40 40V97h12v62h-12l-40-40v40z" fill="#ffffff"/>
+</svg>

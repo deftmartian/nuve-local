@@ -1,0 +1,36 @@
+[project]
+name = "nuve-local"
+version = "0.0.1"
+requires-python = ">=3.14.2"
+
+[dependency-groups]
+dev = [
+  "cryptography==48.0.1",
+  "homeassistant==2026.8.1",
+  "pyright==1.1.411",
+  "pytest==9.1.1",
+  "ruff==0.16.2",
+]
+
+[tool.pytest.ini_options]
+addopts = "-q"
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+
+[tool.ruff.lint]
+select = ["ASYNC", "B", "C90", "DTZ", "E", "F", "G", "I", "LOG", "PERF", "PIE", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.mccabe]
+max-complexity = 15
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["ASYNC109", "ASYNC240", "RUF012"]
+
+[tool.pyright]
+include = ["custom_components/nuve_local"]
+pythonVersion = "3.14"
+typeCheckingMode = "basic"

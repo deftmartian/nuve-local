@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operate Nuve Live"
+  short_description: "Safely access Nuve thermostat and Home Assistant"
+  default_prompt: "Use $operate-nuve-live to inspect or change the live Nuve thermostat integration safely."

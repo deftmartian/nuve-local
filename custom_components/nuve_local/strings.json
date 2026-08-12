@@ -1,0 +1,371 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose how the thermostat reaches Home Assistant",
+        "description": "A trusted reverse proxy is recommended when it already manages local certificates. Direct TLS is available when Home Assistant owns a certificate the stock thermostat trusts.",
+        "data": {
+          "deployment_profile": "Deployment profile"
+        }
+      },
+      "reverse_proxy": {
+        "title": "Connect through a trusted reverse proxy",
+        "description": "Enter the API hostname used by the thermostat. The proxy must preserve the Host, send one X-Forwarded-For address, and forward HTTP to Nuve Local. Leave the listen address blank for automatic detection.",
+        "data": {
+          "thermostat_ip": "Thermostat IP address",
+          "serial": "Thermostat serial number",
+          "api_hostname": "Thermostat API hostname",
+          "listen_host": "Home Assistant listen address (optional)",
+          "trusted_proxy_ip": "Trusted reverse-proxy IP address"
+        }
+      },
+      "direct_tls": {
+        "title": "Connect directly to Home Assistant",
+        "description": "Enter the thermostat's API hostname and a certificate it trusts. Leave the listen address blank for automatic detection.",
+        "data": {
+          "thermostat_ip": "Thermostat IP address",
+          "serial": "Thermostat serial number",
+          "api_hostname": "Thermostat API hostname",
+          "listen_host": "Home Assistant listen address (optional)",
+          "certificate": "TLS certificate path",
+          "private_key": "TLS private key path"
+        }
+      },
+      "commissioning": {
+        "title": "Verify the thermostat before pairing",
+        "description": "Enter the values from the thermostat backup. After pairing, Nuve Local captures its starting state once. Control remains off until that state agrees with fresh data.",
+        "data": {
+          "bootstrap_firmware_version": "Thermostat firmware version",
+          "bootstrap_technician_url": "Current technician URL",
+          "bootstrap_metadata_confirmed": "I verified the firmware version and current technician URL",
+          "bootstrap_no_update_confirmed": "I verified that no thermostat firmware update is active",
+          "temp_correction_version": "Current temperature-correction model version",
+          "automatic_baseline_capture": "Capture the starting state automatically"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Enter a valid IP address.",
+      "invalid_serial": "Enter the thermostat serial number.",
+      "certificate_pair_required": "Provide both a certificate and private key, or leave both blank.",
+      "invalid_api_hostname": "Enter one hostname or IPv4 address without a scheme, path, or port.",
+      "invalid_deployment_profile": "Choose one supported deployment profile.",
+      "trusted_proxy_required": "Enter the reverse-proxy address allowed to forward thermostat requests.",
+      "direct_profile_disallows_proxy": "Clear the trusted proxy when using direct TLS.",
+      "direct_profile_requires_certificate": "Direct TLS requires both a trusted certificate and its private key.",
+      "listen_address_unavailable": "Home Assistant could not determine a local route. Enter its listener address.",
+      "invalid_bootstrap_firmware": "Enter the supported firmware version shown on the thermostat.",
+      "invalid_technician_url": "Enter the current technician URL, or leave it blank if you verified that it is empty.",
+      "invalid_temp_correction_version": "Enter the temperature-correction model version used by this firmware.",
+      "commissioning_confirmation_required": "Confirm that you checked these values on the thermostat.",
+      "control_not_ready": "Control needs a paired thermostat, saved Settings and Auto state, a supported mode, and fresh monitor data.",
+      "contractor_fields_incomplete": "Provide the brand, phone number, and logo path together, or leave all three blank.",
+      "invalid_contractor_value": "Use a short single-line contractor value.",
+      "invalid_contractor_url": "Enter an absolute HTTPS website URL without embedded credentials."
+    },
+    "abort": {
+      "already_configured": "This thermostat is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Nuve Local setup and options",
+        "menu_options": {
+          "status": "Deployment status",
+          "control": "Local control",
+          "pairing": "Pairing window",
+          "sources": "Weather sources",
+          "contractor": "Contractor display",
+          "commissioning": "Setup checks",
+          "network": "Advanced network and TLS"
+        }
+      },
+      "status": {
+        "title": "Deployment status",
+        "description": "Profile: {profile}\nListener: {listener}\nPairing: {pairing}\nSettings baseline: {settings}\nAuto baseline: {auto}\nMonitor: {monitor}\nControl: {control}"
+      },
+      "control": {
+        "title": "Local control",
+        "data": {
+          "control_enabled": "Enable local thermostat control"
+        }
+      },
+      "pairing": {
+        "title": "Open a new pairing window",
+        "description": "This forgets the current token and allows one thermostat to pair for five minutes. All request checks remain active.",
+        "data": {
+          "open_pairing_window": "Forget the current token and open the pairing window"
+        }
+      },
+      "sources": {
+        "title": "Weather sources",
+        "data": {
+          "outdoor_temperature_entity": "Outdoor temperature sensor",
+          "weather_entity": "Weather entity for current conditions and daily forecast"
+        }
+      },
+      "contractor": {
+        "title": "Contractor display",
+        "data": {
+          "contractor_brand": "Current contractor brand (optional)",
+          "contractor_phone": "Contractor phone number (optional)",
+          "contractor_url": "Technician Access QR website (optional)",
+          "contractor_logo_path": "750 x 375 RGBA PNG path in Home Assistant (optional)"
+        }
+      },
+      "commissioning": {
+        "title": "Setup checks",
+        "description": "Changes reload the listener. Automatic starting-state capture runs once after each restart; use the diagnostic capture button to retry.",
+        "data": {
+          "bootstrap_firmware_version": "Thermostat firmware version",
+          "bootstrap_technician_url": "Current technician URL",
+          "bootstrap_metadata_confirmed": "I verified the firmware version and current technician URL",
+          "bootstrap_no_update_confirmed": "I verified that no thermostat firmware update is active",
+          "temp_correction_version": "Current temperature-correction model version",
+          "automatic_baseline_capture": "Capture the starting state automatically"
+        }
+      },
+      "network": {
+        "title": "Advanced listener and TLS settings",
+        "description": "Changes reload the listener. Keep these values aligned with the thermostat endpoint, DNS, proxy, certificate, and firewall rules.",
+        "data": {
+          "deployment_profile": "Deployment profile",
+          "thermostat_ip": "Thermostat IP address",
+          "trusted_proxy_ip": "Trusted reverse-proxy IP address",
+          "listen_host": "Home Assistant listen address",
+          "listen_port": "Listen port",
+          "api_hostname": "Thermostat API hostname",
+          "certificate": "TLS certificate path",
+          "private_key": "TLS private key path"
+        }
+      }
+    },
+    "error": {
+      "invalid_ip": "Enter a valid IP address.",
+      "certificate_pair_required": "Provide both a certificate and private key, or leave both blank.",
+      "invalid_api_hostname": "Enter one hostname or IPv4 address without a scheme, path, or port.",
+      "invalid_deployment_profile": "Choose one supported deployment profile.",
+      "trusted_proxy_required": "Enter the reverse-proxy address allowed to forward thermostat requests.",
+      "direct_profile_disallows_proxy": "Clear the trusted proxy when using direct TLS.",
+      "direct_profile_requires_certificate": "Direct TLS requires both a trusted certificate and its private key.",
+      "listen_address_unavailable": "Home Assistant could not determine a local route. Enter its listener address.",
+      "invalid_bootstrap_firmware": "Enter the supported firmware version shown on the thermostat.",
+      "invalid_technician_url": "Enter the current technician URL, or leave it blank if you verified that it is empty.",
+      "invalid_temp_correction_version": "Enter the temperature-correction model version used by this firmware.",
+      "commissioning_confirmation_required": "Confirm that you checked these values on the thermostat.",
+      "control_not_ready": "Control needs a paired thermostat, saved Settings and Auto state, a supported mode, and fresh monitor data.",
+      "contractor_fields_incomplete": "Provide the brand, phone number, and logo path together, or leave all three blank.",
+      "invalid_contractor_value": "Use a short single-line contractor value.",
+      "invalid_contractor_url": "Enter an absolute HTTPS website URL without embedded credentials."
+    }
+  },
+  "selector": {
+    "deployment_profile": {
+      "options": {
+        "reverse_proxy": "Trusted reverse proxy (recommended)",
+        "direct_tls": "Direct TLS"
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "fan_active": {"name": "Fan"},
+      "hold_active": {"name": "Schedule hold"},
+      "status_led_active": {"name": "Status LED"},
+      "reported_online": {"name": "Thermostat-reported connectivity"},
+      "control_ready": {"name": "Control ready"},
+      "canonical_sync_ready": {"name": "Device state ready"},
+      "monitor_fresh": {"name": "Monitor data fresh"},
+      "persistence_healthy": {"name": "Persistence healthy"},
+      "outdoor_temperature_fresh": {"name": "Outdoor temperature fresh"},
+      "forecast_healthy": {"name": "Forecast healthy"},
+      "uncertain_outcome": {"name": "Command outcome uncertain"},
+      "contractor_info_ready": {"name": "Contractor information ready"},
+      "heat_pump_emergency_configured": {"name": "Heat-pump emergency heat configured"},
+      "automatic_auxiliary_heat": {"name": "Automatic auxiliary heat"},
+      "auxiliary_heating_configured": {"name": "Auxiliary heating configured"},
+      "parallel_auxiliary_heat": {"name": "Parallel auxiliary heat"},
+      "aux1_and_emergency_together": {"name": "AUX1 and emergency heat together"},
+      "auxiliary_as_emergency": {"name": "Auxiliary heat used as emergency heat"},
+      "fan_with_auxiliary": {"name": "Fan with auxiliary heat"},
+      "thermostat_controls_fan": {"name": "Thermostat controls fan"},
+      "heating_controlled_by_furnace": {"name": "Heating controlled by furnace"},
+      "compressor_lockout_configured": {"name": "Compressor lockout configured"},
+      "fan_with_accessory": {"name": "Fan with accessory"},
+      "auxiliary_lockout_configured": {"name": "Auxiliary lockout configured"}
+    },
+    "button": {
+      "capture_settings_baseline": {"name": "Capture starting thermostat settings"}
+    },
+    "number": {
+      "fan_working_per_hour": {"name": "Fan circulation per hour"},
+      "display_brightness": {"name": "Display brightness"}
+    },
+    "light": {
+      "display_backlight": {"name": "Display backlight"}
+    },
+    "select": {
+      "display_brightness_mode": {
+        "name": "Display brightness mode",
+        "state": {
+          "manual": "Manual",
+          "adaptive": "Adaptive"
+        }
+      },
+      "display_backlight_shade": {
+        "name": "Display backlight shade",
+        "state": {
+          "white_0": "White 0% saturation",
+          "white_25": "White 25% saturation",
+          "white_50": "White 50% saturation",
+          "white_75": "White 75% saturation",
+          "white_100": "White 100% saturation",
+          "color": "Color"
+        }
+      },
+      "time_format": {
+        "name": "Time format",
+        "state": {
+          "12_hour": "12-hour",
+          "24_hour": "24-hour"
+        }
+      }
+    },
+    "switch": {
+      "night_mode": {"name": "Night mode"},
+      "hvac_led_blinking": {"name": "HVAC LED blinking"},
+      "proximity_detection": {"name": "Proximity detection"}
+    },
+    "time": {
+      "night_mode_start": {"name": "Night mode start"},
+      "night_mode_end": {"name": "Night mode end"}
+    },
+    "sensor": {
+      "current_temperature": {"name": "Current temperature"},
+      "current_humidity": {"name": "Current humidity"},
+      "air_quality_level": {
+        "name": "Indoor air quality level",
+        "state": {
+          "none": "No reading",
+          "level_0": "Level 0",
+          "level_1": "Level 1",
+          "level_2": "Level 2"
+        }
+      },
+      "air_pressure": {"name": "Air pressure"},
+      "target_temperature": {"name": "Target temperature"},
+      "target_humidity": {"name": "Target humidity"},
+      "auto_temperature_low": {"name": "Auto low temperature"},
+      "auto_temperature_high": {"name": "Auto high temperature"},
+      "last_seen": {"name": "Last seen"},
+      "cooling_stage": {"name": "Cooling stage"},
+      "heating_stage": {"name": "Heating stage"},
+      "system_type": {
+        "name": "Equipment type",
+        "state": {
+          "none": "None",
+          "traditional": "Traditional",
+          "heat_pump": "Heat pump",
+          "cooling_only": "Cooling only",
+          "heating_only": "Heating only",
+          "dual_fuel_heating": "Dual-fuel heating"
+        }
+      },
+      "schedule_type": {
+        "name": "Schedule state",
+        "state": {
+          "sleep": "Sleep",
+          "wake": "Wake",
+          "home": "Home",
+          "away": "Away",
+          "hold": "Hold",
+          "none": "None"
+        }
+      },
+      "mcu_temperature": {"name": "Controller temperature"},
+      "firmware_version": {"name": "Firmware version"},
+      "wifi_strength": {"name": "Wi-Fi strength (raw)"},
+      "configured_equipment_type": {
+        "name": "Configured equipment type",
+        "state": {
+          "traditional": "Traditional",
+          "heat_pump": "Heat pump",
+          "cooling": "Cooling only",
+          "heating": "Heating only",
+          "dual_fuel_heating": "Dual-fuel heating"
+        }
+      },
+      "configured_cooling_stages": {"name": "Configured cooling stages"},
+      "configured_heating_stages": {"name": "Configured heating stages"},
+      "heat_pump_reversing_valve_code": {"name": "Heat-pump reversing-valve code (raw)"},
+      "system_run_delay": {"name": "System run delay"},
+      "dual_fuel_threshold": {"name": "Dual-fuel threshold"},
+      "dual_fuel_manual_heating_code": {"name": "Dual-fuel manual-heating code (raw)"},
+      "dual_fuel_default_heating_mode_code": {"name": "Dual-fuel default heating-mode code (raw)"},
+      "emergency_minimum_time": {"name": "Emergency minimum time"},
+      "auxiliary_unreached_delay": {"name": "Auxiliary heat unreached delay"},
+      "temperature_correction": {"name": "Temperature correction"},
+      "overcool": {"name": "Overcool allowance"},
+      "auxiliary_engagement_difference": {"name": "Auxiliary heat engagement difference"},
+      "heat_dissipation_time": {"name": "Heat dissipation time"},
+      "cool_dissipation_time": {"name": "Cool dissipation time"},
+      "accessory_wire": {"name": "Accessory wire (raw)"},
+      "accessory_mode_code": {"name": "Accessory mode code (raw)"},
+      "heat_deadband": {"name": "Heat deadband"},
+      "cool_deadband": {"name": "Cool deadband"},
+      "auxiliary_lockout_threshold": {"name": "Auxiliary lockout threshold"},
+      "heat_minimum_on_time": {"name": "Heat minimum on time"},
+      "cool_minimum_on_time": {"name": "Cool minimum on time"}
+    }
+  },
+  "issues": {
+    "unsupported_firmware": {
+      "title": "Nuve firmware is not supported",
+      "description": "This firmware is not supported. Keep control off and install a Nuve Local release that supports the version shown on the thermostat."
+    },
+    "canonical_baseline_problem": {
+      "title": "Nuve starting device state is incomplete",
+      "description": "Settings, Auto, or setup data is missing or disagrees with fresh thermostat data. Keep control off until Deployment status reports ready."
+    },
+    "monitor_authority_stale": {
+      "title": "Nuve thermostat data is stale",
+      "description": "The latest complete monitor record is missing, stale, or older than a Settings change. Check the network path and wait for fresh data."
+    },
+    "persistence_problem": {
+      "title": "Nuve saved device state needs attention",
+      "description": "Home Assistant could not verify the saved thermostat state or recovered an earlier copy. Keep control off, check storage health, and preserve a backup before reloading."
+    },
+    "uncertain_command_outcome": {
+      "title": "A Nuve command outcome is uncertain",
+      "description": "The thermostat fetched a command but did not confirm it. Do not retry. Compare Home Assistant with the thermostat and wait for fresh Settings, Auto, and monitor data."
+    },
+    "schedule_authority_block": {
+      "title": "A Nuve schedule blocks Settings writes",
+      "description": "A schedule is active or its status is stale. Settings changes could erase it, so disable the schedule on the thermostat and wait for a fresh No Schedule update."
+    }
+  },
+  "exceptions": {
+    "bootstrap_not_ready": {"message": "Starting-state capture needs a paired online thermostat, control off, supported firmware, a verified technician URL, and no active firmware update."},
+    "combined_change_unsupported": {"message": "Change the Nuve operating mode and temperature in separate actions."},
+    "invalid_auto_temperature": {"message": "Auto mode requires low and high targets from 4 to 32 C in whole-degree increments."},
+    "auto_baseline_missing": {"message": "The thermostat has not supplied both Auto temperature bounds."},
+    "invalid_auto_range": {"message": "The Auto low temperature must be below the high temperature."},
+    "range_requires_auto": {"message": "A temperature range can only be set while the thermostat is in Auto mode."},
+    "temperature_required": {"message": "A target temperature is required."},
+    "invalid_temperature": {"message": "Use a target from 18 to 30 C in whole-degree increments."},
+    "unsupported_hvac_mode": {"message": "That HVAC mode is not supported by the Nuve thermostat."},
+    "unsupported_fan_mode": {"message": "Choose Auto, On, or Off for the Nuve fan mode."},
+    "invalid_fan_working_per_hour": {"message": "Use a whole-number fan circulation time from 10 to 60 minutes per hour."},
+    "invalid_display_brightness": {"message": "Use a whole-number display brightness from 0 to 100 percent."},
+    "invalid_night_mode_time": {"message": "Use a local wall-clock time in HH:MM format with minute resolution."},
+    "control_disabled": {"message": "Local thermostat control is disabled in the Nuve Local integration options."},
+    "control_not_ready": {"message": "Local control is waiting for current device state. Resynchronization takes two five-second Settings polls and a fresh monitor upload; pairing, saved starting state, and a supported mode are also required."},
+    "control_busy": {"message": "Another Nuve control request is already in progress."},
+    "control_state_changed": {"message": "The thermostat was changed locally before this request could be delivered."},
+    "command_timeout": {"message": "The thermostat did not fetch this request before it timed out; no change was delivered."},
+    "outcome_uncertain": {"message": "The thermostat fetched this request but did not confirm the result. Further writes are blocked until fresh device state arrives."},
+    "runtime_stopped": {"message": "The Nuve Local integration stopped before the request completed."},
+    "control_failed": {"message": "The Nuve control request failed."}
+  }
+}
