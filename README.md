@@ -66,6 +66,26 @@ has also been tested on a thermostat. Other builds must be reviewed before use. 
 
 ## Install
 
+### Install with HACS
+
+Nuve Local is not yet included in the default HACS catalog. Add it as a custom
+repository:
+
+1. Complete the prerequisites above.
+2. Open HACS in Home Assistant.
+3. Select the three-dot menu, then **Custom repositories**.
+4. Enter `https://github.com/deftmartian/nuve-local` and select **Integration**.
+5. Select **Add**, find **Nuve Local** in HACS, and install it.
+6. Restart Home Assistant if requested.
+7. Follow the [deployment guide](docs/deployment.md), then go to
+   **Settings → Devices & services → Add integration → Nuve Local**.
+
+HACS installs and updates the Home Assistant integration only. It does not
+configure thermostat DNS, firewall rules, TLS termination, proxying, or the
+thermostat API endpoint.
+
+### Install manually
+
 Download the ZIP asset from the
 [latest release](https://github.com/deftmartian/nuve-local/releases/latest)
 and extract the complete component to:
