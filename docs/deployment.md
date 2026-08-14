@@ -113,26 +113,11 @@ The thermostat sends requests to the `endpoint` URL. Home Assistant's **API
 hostname** field must match that URL's hostname; it is unrelated to the hostname used
 to open Home Assistant.
 
-Choose one strategy:
-
-### Keep the existing hostname with split DNS
-
-Keep the current `endpoint` only when:
-
-- its scheme, hostname, port, and path can be served by the local deployment;
-- local DNS can resolve that hostname to your proxy or Home Assistant listener; and
-- the local TLS endpoint can present a certificate for that hostname which the
-  thermostat already trusts.
-
-DNS redirection does not bypass TLS checks. The certificate must match the hostname
-and chain to a CA the thermostat trusts. Prepare the DNS override now, but do not
-activate it until Nuve Local is listening in step 6.
-
-### Use a dedicated hostname
-
-For most new installations, use a real subdomain you control, a trusted reverse
-proxy, and a local DNS record. Avoid `.local`, bare hostnames, and untrusted
-certificate issuers. Step 6 changes only the root-level `endpoint` entry.
+Use a real DNS hostname that you control and a trusted certificate for that hostname.
+The name may be dedicated to Nuve Local or be an existing operator-controlled
+hostname on a dedicated port. Local DNS must resolve it to your proxy or Home
+Assistant listener from the thermostat network. Avoid `.local`, bare hostnames, and
+untrusted certificate issuers. Step 6 changes only the root-level `endpoint` entry.
 
 Use one of these URL forms:
 
@@ -205,8 +190,8 @@ Apply these network rules:
 6. The thermostat cannot bypass the intended path through another DNS resolver or an
    unrestricted vendor-service route.
 
-You may activate a new hostname now because the thermostat does not use it yet. Wait
-until step 6 to activate split DNS for the current hostname.
+You may activate the local DNS record now because the thermostat does not use the new
+endpoint yet.
 
 Test DNS from the thermostat network. In proxy mode, also test HTTPS with SNI set to
 `<api-hostname>`. In direct mode, inspect the certificate now and test the listener
@@ -239,22 +224,7 @@ In direct mode, verify the listener certificate before changing the endpoint.
 
 ## 6. Direct the thermostat to Nuve Local
 
-### If keeping the existing endpoint
-
-Activate split DNS so the current hostname resolves to the proxy or listener. Do not
-edit the device file.
-
-Restart `appStherm` to clear existing network state and prompt a new connection:
-
-```bash
-ssh root@<thermostat-ip> '
-  systemctl restart appStherm.service
-  systemctl is-active appStherm.service
-  pgrep -af "[a]ppStherm"
-'
-```
-
-### If changing to a dedicated endpoint
+### Change the endpoint
 
 While the HVAC is stable, review and run this script. It changes the single
 root-level `endpoint`, preserves every other line, and retains file permissions and
@@ -378,15 +348,6 @@ If `device_config.ini` was edited:
 4. Verify the original endpoint and normal local HVAC state.
 5. Remove the Nuve Local DNS, proxy, and firewall rules only after the thermostat no
    longer depends on them.
-
-### Split-DNS rollback
-
-If the device file was never changed:
-
-1. Restore the original DNS answer for the vendor hostname.
-2. Restart `appStherm.service` to clear existing network state.
-3. Verify normal thermostat operation before removing the local proxy and firewall
-   rules.
 
 ### Home Assistant rollback
 

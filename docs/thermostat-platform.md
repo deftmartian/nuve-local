@@ -51,8 +51,7 @@ questions, see [Hardware and bus map](hardware-bus-map.md).
 `appStherm.service` starts `/usr/local/bin/appStherm -platform linuxfb` and restarts
 it on failure. The application reads `/usr/local/bin/device_config.ini` during
 startup. Its root-level `endpoint` setting becomes `API_SERVER_BASE_URL`, which is
-the supported configuration seam when a deployment uses a dedicated hostname. A
-split-DNS deployment can retain an already-matching vendor endpoint. A systemd
+the supported configuration seam for an operator-controlled hostname. A systemd
 environment override alone is overwritten by the application.
 
 ## Storage and recovery layout
@@ -79,9 +78,8 @@ vendor services are still open questions. See
 ## What matters for deployment
 
 - The thermostat validates HTTPS certificates and hostnames normally.
-- The API base can include an explicit port. When it must change, the existing
-  `endpoint` key is used rather than patching the application; a matching split-DNS
-  vendor endpoint may instead be retained.
+- The API base can include an explicit port. The existing `endpoint` key is used to
+  set the operator-controlled hostname rather than patching the application.
 - The stock image exposes root SSH for maintenance. The deployment guide documents
   the recovered default and safe handling.
 - Nuve Local does not update firmware, change installer wiring, operate recovery,

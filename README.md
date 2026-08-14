@@ -6,7 +6,7 @@ Nuve Local replaces the thermostat's vendor API endpoint with a listener on your
 LAN. It adds climate controls, sensor data, display settings, diagnostics, and
 Home Assistant Repairs without a Nuve account or cloud service.
 
-![Version 0.0.2](https://img.shields.io/badge/release-v0.0.2-2e7d32)
+![Version 0.0.3](https://img.shields.io/badge/release-v0.0.3-2e7d32)
 ![Home Assistant 2026.7.4 or newer](https://img.shields.io/badge/Home%20Assistant-2026.7.4%2B-41bdf5)
 ![Local push](https://img.shields.io/badge/IoT%20class-local%20push-00a878)
 ![License](https://img.shields.io/badge/license-MIT-7b68ee)
@@ -47,11 +47,11 @@ This is not a plug-and-play cloud login. Initial setup requires:
 - a supported thermostat firmware version;
 - root SSH access to back up and, when needed, redirect the thermostat;
 - local DNS and firewall control;
-- a hostname with a public TLS certificate; and
+- an operator-controlled hostname with a public TLS certificate; and
 - Home Assistant 2026.7.4 or newer with access to `/config`.
 
-Changing the API endpoint is persistent. Split DNS can avoid that edit when the
-existing endpoint, port, path, and certificate all fit the local deployment.
+Setup persistently changes the thermostat's API endpoint to that hostname. Local DNS
+then resolves it to the proxy or listener on your LAN.
 
 Start with [Deployment and rollback](docs/deployment.md). It places backup and
 network preparation before Home Assistant's five-minute pairing window. Control is

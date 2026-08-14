@@ -731,17 +731,19 @@ endpoint such as `https://nuve-local.example:18443/` is therefore supported by t
 inspected `1.5.7.4` construction path; this does not waive ordinary certificate and
 hostname verification.
 
+A firewall test—not split DNS—accepted a self-signed certificate once; normal boot rejected it.
+
 An operator may terminate that verified client TLS session at a local reverse
 proxy. This is a network deployment choice, not thermostat protocol behavior. Nuve
 Local's trusted-proxy profile accepts a plain HTTP upstream only from one configured
 proxy peer, requires exactly one forwarded real thermostat IP, and still validates
 serial, Host, route, method, and bearer token. The proxy-to-Home-Assistant path must
 therefore be locally restricted by source and destination; it is not suitable across
-an untrusted segment. An existing hostname may be reused on a dedicated port because
-the recovered endpoint preserves that port and TLS authenticates the proxy hostname
-separately from its backend. This avoids path-based multiplexing on Home
-Assistant's normal `/api` namespace. Direct deployment remains peer-IP-only and owns
-its TLS certificate in Home Assistant.
+an untrusted segment. An existing operator-controlled hostname may be reused on a
+dedicated port because the recovered endpoint preserves that port and TLS
+authenticates the proxy hostname separately from its backend. This avoids path-based
+multiplexing on Home Assistant's normal `/api` namespace. Direct deployment remains
+peer-IP-only and owns its TLS certificate in Home Assistant.
 
 All three inspected startup implementations add an important precedence rule:
 `NUVE::DeviceConfig` loads `/usr/local/bin/device_config.ini`, reads its root

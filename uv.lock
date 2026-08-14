@@ -1215,7 +1215,7 @@ wheels = [
 
 [[package]]
 name = "nuve-local"
-version = "0.0.2"
+version = "0.0.3"
 source = { virtual = "." }
 
 [package.dev-dependencies]

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.0.3 - 2026-08-14
+
+### Documentation
+
+- Make an operator-controlled hostname and persistent API endpoint change the only
+  supported deployment path.
+- Align installation, network preparation, rollback, platform, and firmware evidence
+  around repeatable trusted TLS behavior.
+
 ## 0.0.2 - 2026-08-14
 
 ### Documentation
