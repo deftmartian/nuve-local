@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.0.2 - 2026-08-14
+
+### Documentation
+
+- Add HACS custom-repository installation instructions and clarify that HACS does
+  not configure the thermostat network path.
+
 ## 0.0.1 - 2026-08-12
 
 Initial public release of Nuve Local.

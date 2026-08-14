@@ -6,7 +6,7 @@ Nuve Local replaces the thermostat's vendor API endpoint with a listener on your
 LAN. It adds climate controls, sensor data, display settings, diagnostics, and
 Home Assistant Repairs without a Nuve account or cloud service.
 
-![Version 0.0.1](https://img.shields.io/badge/release-v0.0.1-2e7d32)
+![Version 0.0.2](https://img.shields.io/badge/release-v0.0.2-2e7d32)
 ![Home Assistant 2026.7.4 or newer](https://img.shields.io/badge/Home%20Assistant-2026.7.4%2B-41bdf5)
 ![Local push](https://img.shields.io/badge/IoT%20class-local%20push-00a878)
 ![License](https://img.shields.io/badge/license-MIT-7b68ee)
