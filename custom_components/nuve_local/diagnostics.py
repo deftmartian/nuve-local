@@ -19,6 +19,7 @@ from .const import (
     CONF_LISTEN_PORT,
     CONF_PRIVATE_KEY,
     CONF_TEMP_CORRECTION_VERSION,
+    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_TRUSTED_PROXY_IP,
     CONF_WEATHER_ENTITY,
 )
@@ -38,6 +39,7 @@ async def async_get_config_entry_diagnostics(
         key: source_config.get(key)
         for key in (
             CONF_LISTEN_PORT,
+            CONF_THERMOSTAT_HTTPS_PORT,
             CONF_CONTROL_ENABLED,
             CONF_AUTOMATIC_BASELINE_CAPTURE,
             CONF_BOOTSTRAP_FIRMWARE_VERSION,
@@ -51,6 +53,7 @@ async def async_get_config_entry_diagnostics(
         "profile": deployment_profile(source_config),
         "listener_running": bool(getattr(server, "is_running", False)),
         "listener_port": source_config.get(CONF_LISTEN_PORT),
+        "thermostat_https_port": source_config.get(CONF_THERMOSTAT_HTTPS_PORT),
         "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),
         "direct_certificate_configured": bool(
             source_config.get(CONF_CERTIFICATE) and source_config.get(CONF_PRIVATE_KEY)

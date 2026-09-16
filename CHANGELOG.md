@@ -13,6 +13,11 @@
   forecast requests, coalesce refresh tasks, and cancel owned tasks on unload.
   Recoverable listener bind failures now raise `ConfigEntryNotReady`, and
   deployment status/diagnostics work when runtime data is missing.
+- Separate the thermostat-facing HTTPS port from the Home Assistant listener
+  port. Contractor-logo URLs use the external address. Existing reverse-proxy
+  entries keep their previous port through migration; proxy setups no longer
+  guess an unknown external port. Missing optional logo configuration still
+  does not block setup.
 
 ## 0.0.3 - 2026-08-14
 

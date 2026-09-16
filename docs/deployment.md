@@ -136,10 +136,11 @@ Enter only `<api-hostname>` in Home Assistant, without scheme, path, or port.
 | Direct TLS | Nuve Local serves the trusted HTTPS certificate | HTTPS on TCP 18443 | Home Assistant can read the matching certificate and private key |
 
 In proxy mode, Nuve Local checks the proxy address and accepts one
-`X-Forwarded-For` address containing the thermostat IP. In direct mode, Home
-Assistant must be able to read the certificate and key, usually under `/config`.
-The certificate SAN must match `<api-hostname>`, and the thermostat must trust its
-chain.
+`X-Forwarded-For` address containing the thermostat IP. Enter the
+thermostat-facing HTTPS port explicitly; Home Assistant's listen port can differ.
+Direct TLS uses the listen port for both. In direct mode, Home Assistant must be
+able to read the certificate and key, usually under `/config`. The certificate SAN
+must match `<api-hostname>`, and the thermostat must trust its chain.
 
 ## 4. Stage Home Assistant and the network
 

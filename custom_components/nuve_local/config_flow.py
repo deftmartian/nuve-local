@@ -41,6 +41,7 @@ from .const import (
     CONF_PRIVATE_KEY,
     CONF_SERIAL,
     CONF_TEMP_CORRECTION_VERSION,
+    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_THERMOSTAT_IP,
     CONF_TOKEN_SHA256,
     CONF_TRUSTED_PROXY_IP,
@@ -99,6 +100,12 @@ def _connection_schema(profile: str, defaults: dict[str, Any] | None = None) -> 
                 default=defaults.get(CONF_TRUSTED_PROXY_IP, ""),
             )
         ] = str
+        fields[
+            vol.Required(
+                CONF_THERMOSTAT_HTTPS_PORT,
+                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT, DEFAULT_LISTEN_PORT),
+            )
+        ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
     else:
         fields[vol.Required(CONF_CERTIFICATE, default=defaults.get(CONF_CERTIFICATE, ""))] = str
         fields[vol.Required(CONF_PRIVATE_KEY, default=defaults.get(CONF_PRIVATE_KEY, ""))] = str
@@ -209,6 +216,10 @@ def _network_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_LISTEN_PORT, default=defaults.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+            vol.Optional(
+                CONF_THERMOSTAT_HTTPS_PORT,
+                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT, ""),
+            ): vol.Any("", vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))),
             vol.Required(
                 CONF_API_HOSTNAME,
                 default=defaults.get(CONF_API_HOSTNAME, DEFAULT_API_HOSTNAME),
@@ -248,6 +259,25 @@ def _strict_optional_integer(value: Any) -> int | str:
         if text and text.lstrip("+-").isdigit():
             return int(text)
     raise vol.Invalid("expected an integer setting")
+
+
+def _normalize_thermostat_https_port(prepared: dict[str, Any], profile: str) -> dict[str, str]:
+    """Require an explicit proxy port; allow direct TLS to omit and derive it."""
+
+    raw = prepared.get(CONF_THERMOSTAT_HTTPS_PORT, "")
+    if raw in ("", None):
+        prepared.pop(CONF_THERMOSTAT_HTTPS_PORT, None)
+        if profile == DEPLOYMENT_PROFILE_REVERSE_PROXY:
+            return {CONF_THERMOSTAT_HTTPS_PORT: "thermostat_https_port_required"}
+        return {}
+    try:
+        port = _strict_optional_integer(raw)
+    except vol.Invalid:
+        return {CONF_THERMOSTAT_HTTPS_PORT: "invalid_thermostat_https_port"}
+    if not isinstance(port, int) or not 1 <= port <= 65535:
+        return {CONF_THERMOSTAT_HTTPS_PORT: "invalid_thermostat_https_port"}
+    prepared[CONF_THERMOSTAT_HTTPS_PORT] = port
+    return {}
 
 
 def _normalize_temp_correction_version(user_input: dict[str, Any]) -> dict[str, str]:
@@ -371,6 +401,7 @@ def _prepare_network_config(
     prepared.setdefault(CONF_PRIVATE_KEY, "")
 
     errors: dict[str, str] = {}
+    errors.update(_normalize_thermostat_https_port(prepared, profile))
     if not prepared.get(CONF_LISTEN_HOST):
         target = (
             prepared.get(CONF_TRUSTED_PROXY_IP)
@@ -502,7 +533,7 @@ def _control_is_being_enabled(defaults: dict[str, Any], user_input: dict[str, An
 class NuveLocalConfigFlow(ConfigFlow, domain=DOMAIN):
     """Create one clean Nuve Local deployment entry."""
 
-    VERSION = 2
+    VERSION = 3
 
     def __init__(self) -> None:
         self._entry_data: dict[str, Any] = {}

@@ -21,12 +21,16 @@ from .const import (
     CONF_CONTRACTOR_PHONE,
     CONF_CONTRACTOR_URL,
     CONF_CONTROL_ENABLED,
+    CONF_LISTEN_PORT,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SERIAL,
     CONF_TEMP_CORRECTION_VERSION,
+    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_TOKEN_SHA256,
     CONF_WEATHER_ENTITY,
     DEFAULT_CONTROL_ENABLED,
+    DEFAULT_LISTEN_PORT,
+    DEPLOYMENT_PROFILE_REVERSE_PROXY,
     FORECAST_REFRESH_MINUTES,
     FORECAST_REQUEST_TIMEOUT_SECONDS,
     PLATFORMS,
@@ -475,3 +479,26 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     from .repairs import delete_entry_issues
 
     delete_entry_issues(hass, entry.entry_id)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Preserve existing addressing when adding the thermostat-facing HTTPS port."""
+
+    from .commissioning import deployment_profile
+
+    if entry.version >= 3:
+        return True
+    data = dict(entry.data)
+    options = dict(entry.options)
+    source = {**data, **options}
+    if deployment_profile(source) == DEPLOYMENT_PROFILE_REVERSE_PROXY:
+        explicit = source.get(CONF_THERMOSTAT_HTTPS_PORT)
+        if not (isinstance(explicit, int) and not isinstance(explicit, bool)):
+            listen = source.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
+            if isinstance(listen, int) and not isinstance(listen, bool):
+                if CONF_THERMOSTAT_HTTPS_PORT in options:
+                    options[CONF_THERMOSTAT_HTTPS_PORT] = listen
+                else:
+                    data[CONF_THERMOSTAT_HTTPS_PORT] = listen
+    hass.config_entries.async_update_entry(entry, data=data, options=options, version=3)
+    return True

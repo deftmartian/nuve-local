@@ -31,6 +31,7 @@ DISPLAY_SETTINGS_KEYS = frozenset(
 
 CONF_LISTEN_HOST = "listen_host"
 CONF_LISTEN_PORT = "listen_port"
+CONF_THERMOSTAT_HTTPS_PORT = "thermostat_https_port"
 CONF_API_HOSTNAME = "api_hostname"
 CONF_THERMOSTAT_IP = "thermostat_ip"
 CONF_TRUSTED_PROXY_IP = "trusted_proxy_ip"

@@ -4,19 +4,23 @@ from __future__ import annotations
 
 import asyncio
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 import voluptuous as vol
 import voluptuous_serialize
 from homeassistant.helpers import config_validation as cv
 
+from custom_components.nuve_local import async_migrate_entry
 from custom_components.nuve_local.commissioning import (
     deployment_profile,
     new_pairing_deadline,
     pairing_window_is_open,
+    thermostat_https_authority,
+    thermostat_https_port,
 )
 from custom_components.nuve_local.config_flow import (
     NuveLocalConfigFlow,
@@ -54,6 +58,7 @@ from custom_components.nuve_local.const import (
     CONF_PRIVATE_KEY,
     CONF_SERIAL,
     CONF_TEMP_CORRECTION_VERSION,
+    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_THERMOSTAT_IP,
     CONF_TRUSTED_PROXY_IP,
     CONF_WEATHER_ENTITY,
@@ -84,7 +89,7 @@ def _valid_commissioning(**changes: object) -> dict[str, object]:
 
 
 def test_user_flow_routes_to_small_profile_specific_forms() -> None:
-    assert NuveLocalConfigFlow.VERSION == 2
+    assert NuveLocalConfigFlow.VERSION == 3
 
     async def scenario() -> None:
         reverse = NuveLocalConfigFlow()
@@ -100,6 +105,7 @@ def test_user_flow_routes_to_small_profile_specific_forms() -> None:
             "api_hostname",
             "listen_host",
             "trusted_proxy_ip",
+            "thermostat_https_port",
         }
         reverse_api_hostname = next(
             marker
@@ -136,6 +142,7 @@ def test_reverse_proxy_step_returns_independent_network_errors() -> None:
                 "api_hostname": "https://invalid.example/path",
                 "listen_host": "also-not-an-ip",
                 "trusted_proxy_ip": "proxy.invalid",
+                "thermostat_https_port": 18443,
             }
         )
 
@@ -161,12 +168,14 @@ def test_profile_network_preparation_is_explicit_and_normalized() -> None:
             "api_hostname": "NUVE-Local.Example.Net.",
             "listen_host": "192.0.2.10",
             "trusted_proxy_ip": "192.0.2.1",
+            "thermostat_https_port": 443,
         },
     )
     assert not errors
     assert reverse[CONF_SERIAL] == "00-000-000000"
     assert reverse[CONF_API_HOSTNAME] == "nuve-local.example.net"
     assert reverse[CONF_LISTEN_PORT] == 18443
+    assert reverse[CONF_THERMOSTAT_HTTPS_PORT] == 443
     assert reverse[CONF_DEPLOYMENT_PROFILE] == DEPLOYMENT_PROFILE_REVERSE_PROXY
     assert reverse[CONF_CERTIFICATE] == ""
     assert reverse[CONF_PRIVATE_KEY] == ""
@@ -185,6 +194,21 @@ def test_profile_network_preparation_is_explicit_and_normalized() -> None:
     assert not errors
     assert direct[CONF_TRUSTED_PROXY_IP] == ""
     assert direct[CONF_DEPLOYMENT_PROFILE] == DEPLOYMENT_PROFILE_DIRECT_TLS
+    assert CONF_THERMOSTAT_HTTPS_PORT not in direct
+
+
+def test_reverse_proxy_requires_an_explicit_thermostat_https_port() -> None:
+    _, errors = _prepare_network_config(
+        DEPLOYMENT_PROFILE_REVERSE_PROXY,
+        {
+            "thermostat_ip": "192.0.2.23",
+            "serial": "00-000-000000",
+            "api_hostname": "nuve-local.example.net",
+            "listen_host": "192.0.2.10",
+            "trusted_proxy_ip": "192.0.2.1",
+        },
+    )
+    assert errors[CONF_THERMOSTAT_HTTPS_PORT] == "thermostat_https_port_required"
 
 
 def test_profile_validation_rejects_ambiguous_tls_topologies() -> None:
@@ -357,6 +381,7 @@ def test_advanced_network_schema_contains_raw_fields_only() -> None:
         CONF_TRUSTED_PROXY_IP,
         CONF_LISTEN_HOST,
         CONF_LISTEN_PORT,
+        CONF_THERMOSTAT_HTTPS_PORT,
         CONF_API_HOSTNAME,
         CONF_CERTIFICATE,
         CONF_PRIVATE_KEY,
@@ -478,3 +503,73 @@ def test_contractor_schema_keeps_all_optional_fields_visible() -> None:
         CONF_CONTRACTOR_URL,
         CONF_CONTRACTOR_LOGO_PATH,
     }
+
+
+def test_direct_tls_derives_thermostat_https_port_and_proxy_does_not_guess() -> None:
+    direct = {
+        CONF_DEPLOYMENT_PROFILE: DEPLOYMENT_PROFILE_DIRECT_TLS,
+        CONF_API_HOSTNAME: "nuve-local.example.net",
+        CONF_LISTEN_PORT: 18443,
+    }
+    assert thermostat_https_port(direct) == 18443
+    assert thermostat_https_authority(direct) == "nuve-local.example.net:18443"
+    direct[CONF_LISTEN_PORT] = 443
+    assert thermostat_https_authority(direct) == "nuve-local.example.net"
+
+    proxy = {
+        CONF_DEPLOYMENT_PROFILE: DEPLOYMENT_PROFILE_REVERSE_PROXY,
+        CONF_API_HOSTNAME: "nuve-local.example.net",
+        CONF_LISTEN_PORT: 8080,
+    }
+    assert thermostat_https_port(proxy) is None
+    assert thermostat_https_authority(proxy) is None
+    proxy[CONF_THERMOSTAT_HTTPS_PORT] = 443
+    assert thermostat_https_authority(proxy) == "nuve-local.example.net"
+
+
+def test_migrate_preserves_proxy_listen_port_as_thermostat_https_port() -> None:
+    async def scenario() -> None:
+        @dataclass
+        class FakeConfigEntries:
+            def async_update_entry(self, entry: Any, **kwargs: Any) -> bool:
+                if "data" in kwargs:
+                    entry.data = dict(kwargs["data"])
+                if "options" in kwargs:
+                    entry.options = dict(kwargs["options"])
+                if "version" in kwargs:
+                    entry.version = kwargs["version"]
+                return True
+
+        @dataclass
+        class FakeHass:
+            config_entries: FakeConfigEntries = field(default_factory=FakeConfigEntries)
+
+        @dataclass
+        class MigratingEntry:
+            version: int
+            data: dict[str, Any]
+            options: dict[str, Any] = field(default_factory=dict)
+
+        proxy = MigratingEntry(
+            version=2,
+            data={
+                CONF_DEPLOYMENT_PROFILE: DEPLOYMENT_PROFILE_REVERSE_PROXY,
+                CONF_LISTEN_PORT: 18443,
+            },
+        )
+        assert await async_migrate_entry(FakeHass(), proxy) is True  # type: ignore[arg-type]
+        assert proxy.version == 3
+        assert proxy.data[CONF_THERMOSTAT_HTTPS_PORT] == 18443
+
+        direct = MigratingEntry(
+            version=2,
+            data={
+                CONF_DEPLOYMENT_PROFILE: DEPLOYMENT_PROFILE_DIRECT_TLS,
+                CONF_LISTEN_PORT: 18443,
+            },
+        )
+        assert await async_migrate_entry(FakeHass(), direct) is True  # type: ignore[arg-type]
+        assert direct.version == 3
+        assert CONF_THERMOSTAT_HTTPS_PORT not in direct.data
+
+    asyncio.run(scenario())

@@ -65,6 +65,7 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
         assert "raw_varints" not in diagnostics["state"]
         assert diagnostics["config"] == {
             "listen_port": 18443,
+            "thermostat_https_port": None,
             "control_enabled": False,
             "automatic_baseline_capture": True,
             "bootstrap_firmware_version": None,
@@ -76,6 +77,7 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
             "profile": "reverse_proxy",
             "listener_running": False,
             "listener_port": 18443,
+            "thermostat_https_port": None,
             "trusted_proxy_configured": True,
             "direct_certificate_configured": True,
             "pairing_window_open": False,

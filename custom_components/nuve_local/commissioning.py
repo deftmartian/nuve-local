@@ -7,9 +7,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from .const import (
+    CONF_API_HOSTNAME,
     CONF_DEPLOYMENT_PROFILE,
+    CONF_LISTEN_PORT,
     CONF_PAIRING_DEADLINE,
+    CONF_THERMOSTAT_HTTPS_PORT,
     DEFAULT_DEPLOYMENT_PROFILE,
+    DEFAULT_LISTEN_PORT,
+    DEPLOYMENT_PROFILE_DIRECT_TLS,
     DEPLOYMENT_PROFILES,
     PAIRING_WINDOW_SECONDS,
 )
@@ -22,6 +27,34 @@ def deployment_profile(config: Mapping[str, Any]) -> str:
     if configured in DEPLOYMENT_PROFILES:
         return str(configured)
     return DEFAULT_DEPLOYMENT_PROFILE
+
+
+def thermostat_https_port(config: Mapping[str, Any]) -> int | None:
+    """Return the thermostat-facing HTTPS port, or None when it cannot be known.
+
+    Direct TLS may derive the port from the listener. Reverse-proxy deployments
+    require an explicit thermostat-facing port and must not guess one.
+    """
+
+    explicit = config.get(CONF_THERMOSTAT_HTTPS_PORT)
+    if isinstance(explicit, int) and not isinstance(explicit, bool) and 1 <= explicit <= 65535:
+        return explicit
+    if deployment_profile(config) != DEPLOYMENT_PROFILE_DIRECT_TLS:
+        return None
+    listen = config.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
+    if isinstance(listen, int) and not isinstance(listen, bool) and 1 <= listen <= 65535:
+        return listen
+    return None
+
+
+def thermostat_https_authority(config: Mapping[str, Any]) -> str | None:
+    """Return ``host`` or ``host:port`` for thermostat-facing HTTPS URLs."""
+
+    hostname = config.get(CONF_API_HOSTNAME)
+    port = thermostat_https_port(config)
+    if not isinstance(hostname, str) or not hostname or port is None:
+        return None
+    return hostname if port == 443 else f"{hostname}:{port}"
 
 
 def new_pairing_deadline(*, now: datetime | None = None) -> str:

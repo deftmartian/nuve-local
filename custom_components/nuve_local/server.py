@@ -21,7 +21,11 @@ from homeassistant.core import HomeAssistant
 
 from .auth import extract_bearer_token, is_allowed_source, is_expected_host, token_sha256
 from .certificate import async_create_ssl_context
-from .commissioning import deployment_profile, pairing_window_is_open
+from .commissioning import (
+    deployment_profile,
+    pairing_window_is_open,
+    thermostat_https_authority,
+)
 from .const import (
     CONF_API_HOSTNAME,
     CONF_CERTIFICATE,
@@ -290,14 +294,16 @@ class NuveApiServer:
     async def _get_contractor_info(self, request: web.Request) -> web.Response:
         """Return the exact stock metadata/download contract when explicitly configured."""
 
-        if not self._runtime.contractor_info_ready or self._contractor_logo_bytes is None:
+        authority = thermostat_https_authority(self._config)
+        if (
+            not self._runtime.contractor_info_ready
+            or self._contractor_logo_bytes is None
+            or authority is None
+        ):
             return web.json_response(
                 {"success": False, "status": "unsupported"},
                 status=404,
             )
-        hostname = str(self._config[CONF_API_HOSTNAME])
-        port = int(self._config[CONF_LISTEN_PORT])
-        authority = hostname if port == 443 else f"{hostname}:{port}"
         token_fingerprint = request[_REQUEST_TOKEN_FINGERPRINT]
         logo_query = urlencode(
             {

@@ -16,7 +16,8 @@
           "serial": "Thermostat serial number",
           "api_hostname": "Thermostat API hostname",
           "listen_host": "Home Assistant listen address (optional)",
-          "trusted_proxy_ip": "Trusted reverse-proxy IP address"
+          "trusted_proxy_ip": "Trusted reverse-proxy IP address",
+          "thermostat_https_port": "Thermostat-facing HTTPS port"
         }
       },
       "direct_tls": {
@@ -54,6 +55,8 @@
       "direct_profile_disallows_proxy": "Clear the trusted proxy when using direct TLS.",
       "direct_profile_requires_certificate": "Direct TLS requires both a trusted certificate and its private key.",
       "listen_address_unavailable": "Home Assistant could not determine a local route. Enter its listener address.",
+      "thermostat_https_port_required": "Enter the HTTPS port the thermostat uses to reach the proxy.",
+      "invalid_thermostat_https_port": "Enter a TCP port from 1 to 65535.",
       "invalid_bootstrap_firmware": "Enter the supported firmware version shown on the thermostat.",
       "invalid_technician_url": "Enter the current technician URL, or leave it blank if you verified that it is empty.",
       "invalid_temp_correction_version": "Enter the temperature-correction model version used by this firmware.",
@@ -134,7 +137,8 @@
           "thermostat_ip": "Thermostat IP address",
           "trusted_proxy_ip": "Trusted reverse-proxy IP address",
           "listen_host": "Home Assistant listen address",
-          "listen_port": "Listen port",
+          "listen_port": "Home Assistant listen port",
+          "thermostat_https_port": "Thermostat-facing HTTPS port",
           "api_hostname": "Thermostat API hostname",
           "certificate": "TLS certificate path",
           "private_key": "TLS private key path"
@@ -150,6 +154,8 @@
       "direct_profile_disallows_proxy": "Clear the trusted proxy when using direct TLS.",
       "direct_profile_requires_certificate": "Direct TLS requires both a trusted certificate and its private key.",
       "listen_address_unavailable": "Home Assistant could not determine a local route. Enter its listener address.",
+      "thermostat_https_port_required": "Enter the HTTPS port the thermostat uses to reach the proxy.",
+      "invalid_thermostat_https_port": "Enter a TCP port from 1 to 65535.",
       "invalid_bootstrap_firmware": "Enter the supported firmware version shown on the thermostat.",
       "invalid_technician_url": "Enter the current technician URL, or leave it blank if you verified that it is empty.",
       "invalid_temp_correction_version": "Enter the temperature-correction model version used by this firmware.",

@@ -17,13 +17,17 @@ from custom_components.nuve_local.auth import token_sha256
 from custom_components.nuve_local.commissioning import new_pairing_deadline
 from custom_components.nuve_local.const import (
     CONF_API_HOSTNAME,
+    CONF_DEPLOYMENT_PROFILE,
     CONF_LISTEN_HOST,
     CONF_LISTEN_PORT,
     CONF_PAIRING_DEADLINE,
     CONF_SERIAL,
+    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_THERMOSTAT_IP,
     CONF_TOKEN_SHA256,
     CONF_TRUSTED_PROXY_IP,
+    DEPLOYMENT_PROFILE_DIRECT_TLS,
+    DEPLOYMENT_PROFILE_REVERSE_PROXY,
 )
 from custom_components.nuve_local.contractor import contractor_logo_signature
 from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
@@ -186,6 +190,9 @@ def _server(
     baseline_store: Any = None,
     contractor_logo_bytes: bytes | None = None,
     contractor_url: str | None = None,
+    listen_port: int = 18443,
+    thermostat_https_port: int | None = 18443,
+    deployment_profile: str | None = None,
 ) -> tuple[NuveApiServer, NuveRuntime, FakeEntry]:
     entry = FakeEntry()
     runtime = NuveRuntime(
@@ -204,9 +211,13 @@ def _server(
         CONF_THERMOSTAT_IP: thermostat_ip,
         CONF_SERIAL: SERIAL,
         CONF_LISTEN_HOST: "127.0.0.1",
-        CONF_LISTEN_PORT: 18443,
+        CONF_LISTEN_PORT: listen_port,
         CONF_PAIRING_DEADLINE: new_pairing_deadline(),
     }
+    if thermostat_https_port is not None:
+        config[CONF_THERMOSTAT_HTTPS_PORT] = thermostat_https_port
+    if deployment_profile is not None:
+        config[CONF_DEPLOYMENT_PROFILE] = deployment_profile
     if trusted_proxy_ip is not None:
         config[CONF_TRUSTED_PROXY_IP] = trusted_proxy_ip
     if contractor_logo_bytes is not None:
@@ -298,6 +309,74 @@ def test_contractor_metadata_uses_stock_download_contract() -> None:
                 headers={"Host": "nuve-local.example.net"},
             )
             assert wrong_signature.status == 401
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_contractor_logo_url_uses_thermostat_facing_port() -> None:
+    async def scenario() -> None:
+        logo = b"synthetic validated png bytes"
+        proxy, runtime, entry = _server(
+            api_hostname="nuve-local.example.net",
+            contractor_logo_bytes=logo,
+            listen_port=8080,
+            thermostat_https_port=443,
+            deployment_profile=DEPLOYMENT_PROFILE_REVERSE_PROXY,
+        )
+        entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
+        runtime.paired = True
+        signature = contractor_logo_signature(
+            token_fingerprint=entry.data[CONF_TOKEN_SHA256], serial=SERIAL
+        )
+        async with TestClient(TestServer(proxy._create_app())) as client:
+            metadata = await client.get(
+                f"/api/sync/getContractorInfo?sn={SERIAL}",
+                headers={**HEADERS, "Host": "nuve-local.example.net"},
+            )
+            assert (await metadata.json())["data"]["logo"] == (
+                f"https://nuve-local.example.net/api/contractor-logo?sn={SERIAL}&sig={signature}"
+            )
+        await runtime.async_shutdown()
+
+        direct, runtime, entry = _server(
+            api_hostname="nuve-local.example.net",
+            contractor_logo_bytes=logo,
+            listen_port=18443,
+            thermostat_https_port=None,
+            deployment_profile=DEPLOYMENT_PROFILE_DIRECT_TLS,
+        )
+        entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
+        runtime.paired = True
+        signature = contractor_logo_signature(
+            token_fingerprint=entry.data[CONF_TOKEN_SHA256], serial=SERIAL
+        )
+        async with TestClient(TestServer(direct._create_app())) as client:
+            metadata = await client.get(
+                f"/api/sync/getContractorInfo?sn={SERIAL}",
+                headers={**HEADERS, "Host": "nuve-local.example.net"},
+            )
+            assert (await metadata.json())["data"]["logo"] == (
+                f"https://nuve-local.example.net:18443/api/contractor-logo?"
+                f"sn={SERIAL}&sig={signature}"
+            )
+        await runtime.async_shutdown()
+
+        guessing, runtime, entry = _server(
+            api_hostname="nuve-local.example.net",
+            contractor_logo_bytes=logo,
+            listen_port=8080,
+            thermostat_https_port=None,
+            deployment_profile=DEPLOYMENT_PROFILE_REVERSE_PROXY,
+        )
+        entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
+        runtime.paired = True
+        async with TestClient(TestServer(guessing._create_app())) as client:
+            metadata = await client.get(
+                f"/api/sync/getContractorInfo?sn={SERIAL}",
+                headers={**HEADERS, "Host": "nuve-local.example.net"},
+            )
+            assert metadata.status == 404
         await runtime.async_shutdown()
 
     asyncio.run(scenario())
