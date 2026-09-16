@@ -33,8 +33,13 @@ Home Assistant Repairs without a Nuve account or cloud service.
 | Diagnostics | Firmware, controller temperature, Wi-Fi strength, and read-only installer settings; disabled by default |
 
 Commands are not optimistic: Home Assistant waits for newer thermostat data before
-reporting success. Writes stop when state is stale, incomplete, uncertain, or owned
-by an active schedule.
+reporting success. The climate entity's `temperature` attribute shows a requested
+setpoint while a Settings command is queued or awaiting confirmation, then returns
+to the confirmed monitor value. Auto-range high/low attributes stay on confirmed
+bounds until the Auto command completes. Extra state attributes
+`requested_target_temperature` and `confirmed_target_temperature` make that split
+explicit. Writes stop when state is stale, incomplete, uncertain, or owned by an
+active schedule.
 
 The IAQ sensor reports only the firmware's `No reading` and levels 0–2. The protocol
 does not provide a proven numerical gas reading, so Nuve Local does not create CO,

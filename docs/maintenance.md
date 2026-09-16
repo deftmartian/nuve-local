@@ -5,10 +5,10 @@ formatting, repository metadata, Pyright, and the full test suite.
 
 ## Current quality baseline
 
-As of 2026-08-12, the gate has 540 tests. The last measured coverage result is from
-v0.6.0: 86% overall and 92% for the control runtime across 300 tests. Later tests add
-deployment, scheduling, persistence, Repairs, display, installer-diagnostic, and
-command-confirmation cases, but no newer coverage percentage has been measured.
+As of 2026-09-15, `scripts/check` plus the Home Assistant lifecycle tests pass.
+Measured coverage of `custom_components/nuve_local` is 87% overall and 93% for
+`runtime.py`. The earlier v0.6.0 figures (86% overall and 92% runtime across 300
+tests) remain historical evidence from the private series.
 
 A dependency audit of the locked 2026.9.2 environment on 2026-09-15 found no
 known vulnerabilities in OSV or PyPI. Repeat it when updating Home Assistant or

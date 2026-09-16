@@ -1,6 +1,9 @@
-# v0.8.1 traceability
+# Traceability
 
-This table links v0.8.1 safety requirements to firmware analysis, implementation,
+Pre-public version labels such as v0.8 and v0.8.1 in this file are historical
+evidence from the private development series. They are not public release numbers.
+
+This table links those safety requirements to firmware analysis, implementation,
 and tests. Firmware addresses apply only to
 `appStherm` SHA-256
 `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e`.

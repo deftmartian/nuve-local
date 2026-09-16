@@ -1,6 +1,8 @@
 # Reference-thermostat validation history
 
 These are dated tests on the reference thermostat, not its current state.
+Pre-public version labels such as v0.6.0, v0.8.0, and v0.8.1 are historical
+evidence from the private series, not public 0.0.x release numbers.
 
 The canonical firmware for the rows below is recovery `appStherm` 1.5.8 SHA-256
 `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e`.

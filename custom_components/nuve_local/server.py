@@ -109,7 +109,6 @@ class NuveApiServer:
         self._baseline_store = baseline_store
         self._runner: web.AppRunner | None = None
         self._token_lock = asyncio.Lock()
-        self._baseline_lock = runtime._transaction_lock
         self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
         self._logged_first_settings_upload = False
         self._contractor_logo_bytes = contractor_logo_bytes
@@ -373,7 +372,7 @@ class NuveApiServer:
             _LOGGER.warning("Rejected Nuve full settings upload: %s", err)
             raise web.HTTPBadRequest(text=str(err)) from err
         received_at = datetime.now(UTC)
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             revision, candidate = self._runtime.prepare_settings_snapshot(
                 snapshot, received_at=received_at
             )
@@ -437,7 +436,7 @@ class NuveApiServer:
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
         received_at = datetime.now(UTC)
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             revision, candidate = self._runtime.prepare_auto_mode_snapshot(
                 snapshot, received_at=received_at
             )
@@ -458,7 +457,7 @@ class NuveApiServer:
             snapshot = parse_device_settings_upload(body)
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             received_at = datetime.now(UTC)
             try:
                 revision, candidate, full = self._runtime.prepare_partial_settings(
@@ -485,7 +484,7 @@ class NuveApiServer:
             snapshot = parse_system_settings_upload(body, serial=self._runtime.serial)
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             received_at = datetime.now(UTC)
             try:
                 revision, candidate, full = self._runtime.prepare_partial_settings(
@@ -512,7 +511,7 @@ class NuveApiServer:
             snapshot = parse_current_sensors_upload(body)
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             self._runtime.async_accept_current_sensors(snapshot, received_at=datetime.now(UTC))
         return web.json_response(_devapi_success_payload(render_current_sensors_ack(snapshot)))
 
@@ -522,7 +521,7 @@ class NuveApiServer:
             snapshot = parse_current_stages_upload(body)
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             self._runtime.async_accept_current_stages(snapshot)
         return web.json_response(_devapi_success_payload(snapshot))
 
@@ -569,7 +568,7 @@ class NuveApiServer:
     async def _async_save_baselines(self) -> None:
         """Persist only device-originated or telemetry-confirmed snapshots."""
 
-        async with self._baseline_lock:
+        async with self._runtime.persistence_lock:
             await self._async_save_baselines_unlocked()
 
     async def _async_save_baselines_unlocked(self) -> None:
@@ -594,71 +593,10 @@ class NuveApiServer:
     ) -> None:
         """Finish an exact durable write before exposing its runtime commit."""
 
-        started_at = datetime.now(UTC)
-        self._runtime._trace_event("persistence", family=family, result="started", at=started_at)
-        if self._runtime.persistence_fault_latched:
-            self._runtime._trace_elapsed_event(
-                "persistence", started_at, family=family, result="unavailable"
-            )
-            raise web.HTTPServiceUnavailable(text="canonical persistence requires reload")
-        task = asyncio.create_task(
-            self._async_save_candidate(candidate), name="Persist Nuve canonical state"
-        )
-        cancelled = False
         try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError as outer_cancel:
-            if task.cancelled():
-                self._runtime._latch_persistence_fault()
-                self._runtime._trace_elapsed_event(
-                    "persistence", started_at, family=family, result="cancelled"
-                )
-                raise web.HTTPServiceUnavailable(
-                    text="canonical persistence task was cancelled"
-                ) from outer_cancel
-            cancelled = True
-            try:
-                await task
-            except asyncio.CancelledError as inner_cancel:
-                self._runtime._latch_persistence_fault()
-                self._runtime._trace_elapsed_event(
-                    "persistence", started_at, family=family, result="cancelled"
-                )
-                raise web.HTTPServiceUnavailable(
-                    text="canonical persistence task was cancelled"
-                ) from inner_cancel
-            except Exception:
-                self._runtime._latch_persistence_fault()
-                self._runtime._trace_elapsed_event(
-                    "persistence", started_at, family=family, result="failed"
-                )
-                raise
-        except Exception:
-            self._runtime._latch_persistence_fault()
-            self._runtime._trace_elapsed_event(
-                "persistence", started_at, family=family, result="failed"
-            )
-            raise web.HTTPServiceUnavailable(text="canonical persistence unavailable") from None
-
-        try:
-            commit()
-        except Exception:
-            # Disk now contains the candidate but runtime did not complete its
-            # matching transition.  Stop all canonical traffic until reload.
-            self._runtime._latch_persistence_fault()
-            self._runtime._trace_elapsed_event(
-                "persistence", started_at, family=family, result="commit_failed"
-            )
-            raise web.HTTPServiceUnavailable(text="canonical commit requires reload") from None
-        self._runtime.persistence_healthy = True
-        self._runtime._trace_elapsed_event(
-            "persistence",
-            started_at,
-            family=family,
-            result="committed_after_cancel" if cancelled else "committed",
-        )
-        if cancelled:
-            raise asyncio.CancelledError
+            await self._runtime.async_persist_and_commit(candidate, commit, family=family)
+        except PersistenceUnavailableError as err:
+            raise web.HTTPServiceUnavailable(text="canonical persistence unavailable") from err
 
     async def async_save_candidate(self, candidate: dict[str, Any]) -> None:
         """Persist one coordinator-locked candidate for the runtime."""

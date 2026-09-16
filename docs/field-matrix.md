@@ -176,6 +176,9 @@ labels are unclear, and installer settings cannot be changed.
 
 ## Release boundary
 
+Pre-public labels such as v0.8 and v0.8.1 below are historical evidence, not the
+public 0.0.x series.
+
 Core v0.8 includes the exact local sync/control model, monitor telemetry, categorical
 IAQ, positive pressure, current weather/forecast, contractor route, value-free
 runtime event trace, fan mode/minutes-per-hour controls, and field-owning display

@@ -27,6 +27,14 @@
   serializer with a fallback for 2026.7.4. The advertised minimum remains
   2026.7.4. The development pin is 2026.9.2.
 
+### Maintenance
+
+- Share one Celsius command validator between the climate entity and runtime.
+- Give the HTTP listener a public persistence/transaction interface instead of
+  private runtime internals.
+- Label pre-public v0.6–v0.8 version numbers as historical evidence, refresh
+  coverage figures, and distinguish requested versus confirmed setpoints.
+
 ## 0.0.3 - 2026-08-14
 
 ### Documentation

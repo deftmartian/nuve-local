@@ -5,7 +5,6 @@
 
 from __future__ import annotations
 
-import math
 from typing import Any, ClassVar, Never
 
 from homeassistant.components.climate import (
@@ -35,7 +34,7 @@ from .const import (
 )
 from .entity import NuveEntity
 from .models import NuveMode
-from .runtime import NuveRuntime
+from .runtime import NuveRuntime, validated_command_celsius
 
 NUVE_TO_HA_MODE: dict[NuveMode, HVACMode] = {
     NuveMode.COOL: HVACMode.COOL,
@@ -169,6 +168,8 @@ class NuveClimate(NuveEntity, ClimateEntity):
             "control_ready": self._runtime.control_ready,
             "control_block_reason": self._runtime.control_block_reason,
             "control_status": self._runtime.command_status,
+            "requested_target_temperature": self._runtime.requested_target_temperature,
+            "confirmed_target_temperature": state.target_temperature,
             "nuve_mode": int(state.mode) if state.mode is not None else None,
             "cooling_stage": state.cooling_stage,
             "heating_stage": state.heating_stage,
@@ -228,39 +229,25 @@ class NuveClimate(NuveEntity, ClimateEntity):
 
     @staticmethod
     def _validated_temperature(value: Any) -> float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            NuveClimate._validation_error("invalid_temperature")
-        temperature = float(value)
-        if (
-            not math.isfinite(temperature)
-            or temperature < MIN_TARGET_TEMPERATURE
-            or temperature > MAX_TARGET_TEMPERATURE
-            or not math.isclose(
-                temperature / TARGET_TEMPERATURE_STEP,
-                round(temperature / TARGET_TEMPERATURE_STEP),
-                abs_tol=1e-7,
+        try:
+            return validated_command_celsius(
+                value,
+                minimum=MIN_TARGET_TEMPERATURE,
+                maximum=MAX_TARGET_TEMPERATURE,
             )
-        ):
+        except ValueError:
             NuveClimate._validation_error("invalid_temperature")
-        return temperature
 
     @staticmethod
     def _validated_auto_temperature(value: Any) -> float:
-        if isinstance(value, bool) or not isinstance(value, (int, float)):
-            NuveClimate._validation_error("invalid_auto_temperature")
-        temperature = float(value)
-        if (
-            not math.isfinite(temperature)
-            or temperature < MIN_AUTO_TEMPERATURE
-            or temperature > MAX_AUTO_TEMPERATURE
-            or not math.isclose(
-                temperature / TARGET_TEMPERATURE_STEP,
-                round(temperature / TARGET_TEMPERATURE_STEP),
-                abs_tol=1e-7,
+        try:
+            return validated_command_celsius(
+                value,
+                minimum=MIN_AUTO_TEMPERATURE,
+                maximum=MAX_AUTO_TEMPERATURE,
             )
-        ):
+        except ValueError:
             NuveClimate._validation_error("invalid_auto_temperature")
-        return temperature
 
     @staticmethod
     def _validation_error(key: str) -> Never:

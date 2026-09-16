@@ -51,6 +51,33 @@ from .protocol import (
 CONTROL_SAFE_MODES = frozenset({NuveMode.COOL, NuveMode.HEAT, NuveMode.AUTO, NuveMode.OFF})
 ACTIVE_SCHEDULE_TYPES = frozenset({0, 1, 2, 3, 8})
 NO_SCHEDULE_TYPE = 9
+
+
+def validated_command_celsius(
+    value: Any,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    """Return one whole-degree Celsius command value inside an exact range."""
+
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ValueError("invalid command temperature")
+    temperature = float(value)
+    if (
+        not math.isfinite(temperature)
+        or temperature < minimum
+        or temperature > maximum
+        or not math.isclose(
+            temperature / TARGET_TEMPERATURE_STEP,
+            round(temperature / TARGET_TEMPERATURE_STEP),
+            abs_tol=1e-7,
+        )
+    ):
+        raise ValueError("invalid command temperature")
+    return temperature
+
+
 SYSTEM_TYPE_NAMES = {
     NuveSystemType.TRADITIONAL: "traditional",
     NuveSystemType.HEAT_PUMP: "heat_pump",
@@ -533,6 +560,23 @@ class NuveRuntime:
         self._schedule_automatic_bootstrap_if_ready()
 
     @property
+    def persistence_lock(self) -> asyncio.Lock:
+        """Return the lock that serializes durable baseline and journal writes."""
+
+        return self._transaction_lock
+
+    async def async_persist_and_commit(
+        self,
+        candidate: dict[str, Any],
+        commit: Callable[[], object],
+        *,
+        family: Literal["settings", "auto"] | None = None,
+    ) -> None:
+        """Persist one candidate, then expose its matching runtime transition."""
+
+        await self._async_persist_and_commit(candidate, commit, family=family)
+
+    @property
     def automatic_bootstrap_attempted(self) -> bool:
         """Return whether this runtime already started its one automatic attempt."""
 
@@ -566,11 +610,17 @@ class NuveRuntime:
         finally:
             self._automatic_bootstrap_task = None
 
-    async def _async_persist_candidate(self, candidate: dict[str, Any]) -> None:
+    async def _async_persist_candidate(
+        self,
+        candidate: dict[str, Any],
+        *,
+        family: Literal["settings", "auto"] | None = None,
+    ) -> None:
         """Persist and latch any ambiguous storage failure fail-closed."""
 
         started_at = datetime.now(UTC)
-        family = self._pending_command.kind if self._pending_command is not None else None
+        if family is None and self._pending_command is not None:
+            family = self._pending_command.kind
         self._trace_event("persistence", family=family, result="started", at=started_at)
         if self._persistence_listener is None:
             self.persistence_healthy = False
@@ -631,7 +681,11 @@ class NuveRuntime:
         self._trace_elapsed_event("persistence", started_at, family=family, result="committed")
 
     async def _async_persist_and_commit(
-        self, candidate: dict[str, Any], commit: Callable[[], None]
+        self,
+        candidate: dict[str, Any],
+        commit: Callable[[], object],
+        *,
+        family: Literal["settings", "auto"] | None = None,
     ) -> None:
         """Persist a prepared candidate, then expose its exact runtime transition."""
 
@@ -639,7 +693,7 @@ class NuveRuntime:
             raise PersistenceUnavailableError("canonical persistence requires reload")
         cancelled = False
         try:
-            await self._async_persist_candidate(candidate)
+            await self._async_persist_candidate(candidate, family=family)
         except asyncio.CancelledError:
             cancelled = True
         try:
@@ -1899,20 +1953,14 @@ class NuveRuntime:
             raise ControlNotReadyError
         validated = copy.deepcopy(changes)
         if "temp" in validated:
-            value = validated["temp"]
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                or not MIN_TARGET_TEMPERATURE <= float(value) <= MAX_TARGET_TEMPERATURE
-                or not math.isclose(
-                    float(value) / TARGET_TEMPERATURE_STEP,
-                    round(float(value) / TARGET_TEMPERATURE_STEP),
-                    abs_tol=1e-7,
+            try:
+                validated["temp"] = validated_command_celsius(
+                    validated["temp"],
+                    minimum=MIN_TARGET_TEMPERATURE,
+                    maximum=MAX_TARGET_TEMPERATURE,
                 )
-            ):
-                raise ControlNotReadyError
-            validated["temp"] = float(value)
+            except ValueError:
+                raise ControlNotReadyError from None
         if "mode_id" in validated:
             value = validated["mode_id"]
             if isinstance(value, bool) or not isinstance(value, int) or value not in (1, 2, 3, 5):
@@ -2148,19 +2196,14 @@ class NuveRuntime:
             raise ControlNotReadyError
         validated: dict[str, Any] = {}
         for key, value in changes.items():
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(float(value))
-                or not MIN_AUTO_TEMPERATURE <= float(value) <= MAX_AUTO_TEMPERATURE
-                or not math.isclose(
-                    float(value) / TARGET_TEMPERATURE_STEP,
-                    round(float(value) / TARGET_TEMPERATURE_STEP),
-                    abs_tol=1e-7,
+            try:
+                validated[key] = validated_command_celsius(
+                    value,
+                    minimum=MIN_AUTO_TEMPERATURE,
+                    maximum=MAX_AUTO_TEMPERATURE,
                 )
-            ):
-                raise ControlNotReadyError
-            validated[key] = float(value)
+            except ValueError:
+                raise ControlNotReadyError from None
         return validated
 
     @staticmethod

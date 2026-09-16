@@ -165,6 +165,8 @@ def test_climate_projects_requested_temperature_until_confirmation(
         await asyncio.sleep(0)
         assert runtime.state.target_temperature == original
         assert entity.target_temperature == 22.0
+        assert entity.extra_state_attributes["requested_target_temperature"] == 22.0
+        assert entity.extra_state_attributes["confirmed_target_temperature"] == original
         assert entity.extra_state_attributes["control_status"] == "queued"
 
         response = await runtime.async_get_settings_response(requested_at=datetime.now(UTC))
