@@ -375,7 +375,8 @@ Do not change DNS, proxy, firewall, thermostat endpoint, SSH password, or pairin
 token during an ordinary integration upgrade.
 
 From 0.0.4, reverse-proxy installs store an explicit thermostat-facing HTTPS port.
-Existing entries copy the previous listen port during migration. After upgrade,
-confirm that port if the proxy and Home Assistant listener use different numbers.
+Existing entries leave an unknown external port unset. After upgrade, enter the
+actual thermostat-facing port in Network options to restore optional contractor
+logo downloads. Telemetry and control continue without that optional setting.
 Rollback of 0.0.4 requires a Home Assistant backup taken before the upgrade because
 config entries move to version 3.

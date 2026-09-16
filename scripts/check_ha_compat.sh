@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run a bounded Home Assistant compatibility gate in disposable environments.
+# Run the full test suite against Home Assistant versions in disposable environments.
 set -euo pipefail
 
 repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -16,17 +16,19 @@ if (($# > 0)); then
 fi
 
 python_bin=${PYTHON:-python3.14}
-tests=(
-  tests/test_ha_lifecycle.py
-  tests/test_runtime.py
-  tests/test_config_flow.py
-  tests/test_setup.py
-)
+work=""
+cleanup() {
+  if [[ -n "$work" ]]; then
+    rm -rf -- "$work"
+    work=""
+  fi
+}
+trap cleanup EXIT
 
 echo "Home Assistant compatibility gate"
 echo "Python: $python_bin"
 echo "Versions: ${versions[*]}"
-echo "Tests: ${tests[*]}"
+echo "Tests: full suite"
 
 for version in "${versions[@]}"; do
   work=$(mktemp -d "${TMPDIR:-/tmp}/nuve-ha-${version}-XXXXXX")
@@ -38,8 +40,8 @@ for version in "${versions[@]}"; do
     "pytest==9.1.1" \
     "cryptography==48.0.1" \
     "voluptuous-serialize"
-  PYTHONPATH="$repo_dir" "$work/venv/bin/python" -m pytest "${tests[@]}" -q --tb=line
-  rm -rf "$work"
+  PYTHONPATH="$repo_dir" "$work/venv/bin/python" -m pytest -q --tb=line
+  cleanup
 done
 
 echo

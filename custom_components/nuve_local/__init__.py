@@ -21,16 +21,12 @@ from .const import (
     CONF_CONTRACTOR_PHONE,
     CONF_CONTRACTOR_URL,
     CONF_CONTROL_ENABLED,
-    CONF_LISTEN_PORT,
     CONF_OUTDOOR_TEMPERATURE_ENTITY,
     CONF_SERIAL,
     CONF_TEMP_CORRECTION_VERSION,
-    CONF_THERMOSTAT_HTTPS_PORT,
     CONF_TOKEN_SHA256,
     CONF_WEATHER_ENTITY,
     DEFAULT_CONTROL_ENABLED,
-    DEFAULT_LISTEN_PORT,
-    DEPLOYMENT_PROFILE_REVERSE_PROXY,
     FORECAST_REFRESH_MINUTES,
     FORECAST_REQUEST_TIMEOUT_SECONDS,
     PLATFORMS,
@@ -359,8 +355,17 @@ def _own_cleanup(
 ) -> None:
     """Track one owned resource for both success unload and failed setup."""
 
-    cleanups.append(callback)
-    entry.async_on_unload(callback)
+    released = False
+
+    def release_once() -> Any:
+        nonlocal released
+        if released:
+            return None
+        released = True
+        return callback()
+
+    cleanups.append(release_once)
+    entry.async_on_unload(release_once)
 
 
 async def _async_run_setup_cleanups(cleanups: list[Callable[[], Any]]) -> None:
@@ -482,23 +487,14 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Preserve existing addressing when adding the thermostat-facing HTTPS port."""
+    """Keep existing configuration without guessing a proxy's external port."""
 
-    from .commissioning import deployment_profile
-
-    if entry.version >= 3:
+    if entry.version > 3:
+        return False
+    if entry.version == 3:
         return True
-    data = dict(entry.data)
-    options = dict(entry.options)
-    source = {**data, **options}
-    if deployment_profile(source) == DEPLOYMENT_PROFILE_REVERSE_PROXY:
-        explicit = source.get(CONF_THERMOSTAT_HTTPS_PORT)
-        if not (isinstance(explicit, int) and not isinstance(explicit, bool)):
-            listen = source.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
-            if isinstance(listen, int) and not isinstance(listen, bool):
-                if CONF_THERMOSTAT_HTTPS_PORT in options:
-                    options[CONF_THERMOSTAT_HTTPS_PORT] = listen
-                else:
-                    data[CONF_THERMOSTAT_HTTPS_PORT] = listen
-    hass.config_entries.async_update_entry(entry, data=data, options=options, version=3)
+    # The internal listener port does not establish the external HTTPS port.
+    # Telemetry and control remain available; optional logos wait for the user
+    # to supply the exact port in network options.
+    hass.config_entries.async_update_entry(entry, version=3)
     return True

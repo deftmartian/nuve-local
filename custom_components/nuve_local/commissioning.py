@@ -36,14 +36,13 @@ def thermostat_https_port(config: Mapping[str, Any]) -> int | None:
     require an explicit thermostat-facing port and must not guess one.
     """
 
-    explicit = config.get(CONF_THERMOSTAT_HTTPS_PORT)
-    if isinstance(explicit, int) and not isinstance(explicit, bool) and 1 <= explicit <= 65535:
-        return explicit
-    if deployment_profile(config) != DEPLOYMENT_PROFILE_DIRECT_TLS:
-        return None
-    listen = config.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
-    if isinstance(listen, int) and not isinstance(listen, bool) and 1 <= listen <= 65535:
-        return listen
+    port = (
+        config.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
+        if deployment_profile(config) == DEPLOYMENT_PROFILE_DIRECT_TLS
+        else config.get(CONF_THERMOSTAT_HTTPS_PORT)
+    )
+    if isinstance(port, int) and not isinstance(port, bool) and 1 <= port <= 65535:
+        return port
     return None
 
 

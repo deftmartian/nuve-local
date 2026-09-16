@@ -157,14 +157,14 @@ def test_real_config_entry_bind_failure_is_retryable(tmp_path: Any, monkeypatch:
     asyncio.run(scenario())
 
 
-def test_real_config_entry_migration_preserves_proxy_port(tmp_path: Any) -> None:
+def test_real_config_entry_migration_leaves_unknown_proxy_port_unset(tmp_path: Any) -> None:
     async def scenario() -> None:
         hass = await _hass(tmp_path)
         entry = _config_entry(version=2)
         hass.config_entries._entries[entry.entry_id] = entry
         assert await async_migrate_entry(hass, entry) is True
         assert entry.version == 3
-        assert entry.data[CONF_THERMOSTAT_HTTPS_PORT] == 18443
+        assert CONF_THERMOSTAT_HTTPS_PORT not in entry.data
 
         direct = _config_entry(
             version=2,
@@ -179,6 +179,32 @@ def test_real_config_entry_migration_preserves_proxy_port(tmp_path: Any) -> None
         assert direct.version == 3
         assert CONF_THERMOSTAT_HTTPS_PORT not in direct.data
         await hass.async_stop()
+
+    asyncio.run(scenario())
+
+
+def test_failed_setup_cleanup_can_be_followed_by_ha_unload(tmp_path: Any, monkeypatch: Any) -> None:
+    async def scenario() -> None:
+        _patch_component(monkeypatch)
+        hass = await _hass(tmp_path)
+        entry = _config_entry(weather_entity="weather.test")
+        hass.config_entries._entries[entry.entry_id] = entry
+        hass.states.async_set("weather.test", "unavailable")
+
+        async def fail_platforms(*args: Any) -> None:
+            raise RuntimeError("platform setup failed")
+
+        hass.config_entries.async_forward_entry_setups = fail_platforms  # type: ignore[method-assign]
+        try:
+            with pytest.raises(RuntimeError, match="platform setup failed"):
+                await async_setup_entry(hass, entry)
+            assert entry.runtime_data._stopped
+            # Home Assistant invokes these after async_setup_entry raises.
+            await entry._async_process_on_unload(hass)
+            await hass.async_block_till_done()
+            assert entry.runtime_data.forecast_refresh._closed
+        finally:
+            await hass.async_stop()
 
     asyncio.run(scenario())
 

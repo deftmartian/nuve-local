@@ -12,11 +12,12 @@
 - Start the thermostat listener before optional forecast retrieval, bound
   forecast requests, coalesce refresh tasks, and cancel owned tasks on unload.
   Recoverable listener bind failures now raise `ConfigEntryNotReady`, and
-  deployment status/diagnostics work when runtime data is missing.
+  deployment status/diagnostics work when runtime data is missing. Failed-setup
+  cleanup is idempotent when Home Assistant subsequently runs unload callbacks.
 - Separate the thermostat-facing HTTPS port from the Home Assistant listener
   port. Contractor-logo URLs use the external address. Existing reverse-proxy
-  entries keep their previous port through migration; proxy setups no longer
-  guess an unknown external port. Missing optional logo configuration still
+  entries leave an unknown external port unset until configured; direct TLS
+  always derives its port from the listener. Missing optional logo configuration still
   does not block setup.
 
 ### Compatibility
@@ -39,9 +40,10 @@
 
 - Home Assistant 2026.7.4 or newer remains the advertised minimum. Development is
   pinned to 2026.9.2. Repeat `scripts/check_ha_compat.sh` after future pins.
-- Reverse-proxy entries migrate by copying the previous listen port into
-  `thermostat_https_port`. Confirm that field if the proxy and listener ports
-  differ. Direct TLS keeps deriving the thermostat-facing port from the listener.
+- After upgrading a reverse-proxy entry, set the thermostat-facing HTTPS port
+  in Network options to restore optional contractor-logo downloads. Migration
+  preserves existing settings without guessing that port; telemetry and control
+  do not depend on it. Direct TLS derives the port from the listener.
 - After install, verify load, telemetry, control-ready, and recovery first. Do
   not treat this release as live-proven for the changed Auto-range schedule gate
   until a separately defined reversible thermostat test is run.
@@ -51,12 +53,14 @@
 ### Remaining limitations
 
 - Schedules, Vacation, and Emergency Heat remain unexposed.
-- Publication and live activation are not part of this candidate.
+- Live activation and reversible thermostat command testing remain separate
+  from repository and release validation.
 - A stalled weather provider no longer blocks the listener, but forecast cards
   stay empty until a bounded refresh succeeds.
-- Official Hassfest/HACS GitHub Action images could not be pulled from this
-  build host. Local manifest, HACS metadata, translation, and repository-gate
-  checks passed instead.
+- The HA development dependency pins `cryptography==48.0.1`, which has three
+  known advisories. Nuve runtime code does not import it; tests use it only to
+  generate local certificates. See [Maintenance](docs/maintenance.md) for the
+  audit scope and upstream constraint.
 
 ## 0.0.3 - 2026-08-14
 

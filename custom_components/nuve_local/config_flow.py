@@ -103,7 +103,7 @@ def _connection_schema(profile: str, defaults: dict[str, Any] | None = None) -> 
         fields[
             vol.Required(
                 CONF_THERMOSTAT_HTTPS_PORT,
-                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT, DEFAULT_LISTEN_PORT),
+                description={"suggested_value": defaults.get(CONF_THERMOSTAT_HTTPS_PORT)},
             )
         ] = vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))
     else:
@@ -218,7 +218,7 @@ def _network_schema(defaults: dict[str, Any]) -> vol.Schema:
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
             vol.Optional(
                 CONF_THERMOSTAT_HTTPS_PORT,
-                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT, ""),
+                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT) or "",
             ): vol.Any("", vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))),
             vol.Required(
                 CONF_API_HOSTNAME,
@@ -264,6 +264,11 @@ def _strict_optional_integer(value: Any) -> int | str:
 def _normalize_thermostat_https_port(prepared: dict[str, Any], profile: str) -> dict[str, str]:
     """Require an explicit proxy port; allow direct TLS to omit and derive it."""
 
+    if profile == DEPLOYMENT_PROFILE_DIRECT_TLS:
+        # Options override entry data: retaining an explicit null also clears an
+        # older proxy port when the user changes topology.
+        prepared[CONF_THERMOSTAT_HTTPS_PORT] = None
+        return {}
     raw = prepared.get(CONF_THERMOSTAT_HTTPS_PORT, "")
     if raw in ("", None):
         prepared.pop(CONF_THERMOSTAT_HTTPS_PORT, None)
