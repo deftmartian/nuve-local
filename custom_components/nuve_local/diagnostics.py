@@ -30,7 +30,7 @@ async def async_get_config_entry_diagnostics(
 ) -> dict[str, Any]:
     """Return non-secret diagnostics for a config entry."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime: NuveRuntime | None = getattr(entry, "runtime_data", None)
     from .repairs import repair_conditions
 
     source_config = {**entry.data, **entry.options}
@@ -46,6 +46,33 @@ async def async_get_config_entry_diagnostics(
             CONF_TEMP_CORRECTION_VERSION,
         )
     }
+    server = getattr(runtime, "server", None) if runtime is not None else None
+    deployment = {
+        "profile": deployment_profile(source_config),
+        "listener_running": bool(getattr(server, "is_running", False)),
+        "listener_port": source_config.get(CONF_LISTEN_PORT),
+        "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),
+        "direct_certificate_configured": bool(
+            source_config.get(CONF_CERTIFICATE) and source_config.get(CONF_PRIVATE_KEY)
+        ),
+        "pairing_window_open": pairing_window_is_open(source_config),
+        "paired": bool(runtime.paired) if runtime is not None else False,
+        "authenticated_contact_seen": (
+            runtime.state.last_seen is not None if runtime is not None else False
+        ),
+        "settings_baseline_ready": (
+            runtime.has_settings_baseline if runtime is not None else False
+        ),
+        "auto_baseline_ready": runtime.has_auto_mode_baseline if runtime is not None else False,
+        "monitor_fresh": runtime.monitor_is_fresh if runtime is not None else False,
+        "control_activation_ready": runtime.can_enable_control if runtime is not None else False,
+    }
+    if runtime is None:
+        return {
+            "config": config,
+            "deployment": deployment,
+            "runtime_available": False,
+        }
     state = asdict(runtime.state)
     state.pop("raw_fixed32", None)
     state.pop("raw_varints", None)
@@ -54,22 +81,7 @@ async def async_get_config_entry_diagnostics(
             state[key] = state[key].isoformat()
     return {
         "config": config,
-        "deployment": {
-            "profile": deployment_profile(source_config),
-            "listener_running": bool(getattr(runtime.server, "is_running", False)),
-            "listener_port": source_config.get(CONF_LISTEN_PORT),
-            "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),
-            "direct_certificate_configured": bool(
-                source_config.get(CONF_CERTIFICATE) and source_config.get(CONF_PRIVATE_KEY)
-            ),
-            "pairing_window_open": pairing_window_is_open(source_config),
-            "paired": runtime.paired,
-            "authenticated_contact_seen": runtime.state.last_seen is not None,
-            "settings_baseline_ready": runtime.has_settings_baseline,
-            "auto_baseline_ready": runtime.has_auto_mode_baseline,
-            "monitor_fresh": runtime.monitor_is_fresh,
-            "control_activation_ready": runtime.can_enable_control,
-        },
+        "deployment": deployment,
         "state": state,
         "protocol": {
             "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),

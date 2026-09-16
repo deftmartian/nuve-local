@@ -599,21 +599,39 @@ class NuveLocalOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             return await self.async_step_init()
         defaults = self._defaults
-        runtime = self.config_entry.runtime_data
-        server = getattr(runtime, "server", None)
+        runtime = getattr(self.config_entry, "runtime_data", None)
+        server = getattr(runtime, "server", None) if runtime is not None else None
+        if runtime is None:
+            pairing = "window open" if pairing_window_is_open(defaults) else "window closed"
+            listener = "unavailable"
+            control = "runtime_unavailable"
+        else:
+            pairing = (
+                "paired"
+                if runtime.paired
+                else ("window open" if pairing_window_is_open(defaults) else "window closed")
+            )
+            listener = "running" if getattr(server, "is_running", False) else "stopped"
+            control = runtime.control_block_reason
         return self.async_show_form(
             step_id="status",
             data_schema=vol.Schema({}),
             description_placeholders={
                 "profile": deployment_profile(defaults),
-                "listener": "running" if getattr(server, "is_running", False) else "stopped",
-                "pairing": "paired"
-                if runtime.paired
-                else ("window open" if pairing_window_is_open(defaults) else "window closed"),
-                "settings": "ready" if runtime.has_settings_baseline else "waiting",
-                "auto": "ready" if runtime.has_auto_mode_baseline else "waiting",
-                "monitor": "fresh" if runtime.monitor_is_fresh else "waiting or stale",
-                "control": runtime.control_block_reason,
+                "listener": listener,
+                "pairing": pairing,
+                "settings": (
+                    "ready" if runtime is not None and runtime.has_settings_baseline else "waiting"
+                ),
+                "auto": (
+                    "ready" if runtime is not None and runtime.has_auto_mode_baseline else "waiting"
+                ),
+                "monitor": (
+                    "fresh"
+                    if runtime is not None and runtime.monitor_is_fresh
+                    else "waiting or stale"
+                ),
+                "control": control,
             },
         )
 

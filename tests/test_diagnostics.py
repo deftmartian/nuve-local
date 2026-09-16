@@ -14,7 +14,7 @@ from custom_components.nuve_local.runtime import NuveRuntime
 
 @dataclass
 class FakeEntry:
-    runtime_data: NuveRuntime
+    runtime_data: NuveRuntime | None = None
     data: dict[str, Any] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -103,5 +103,24 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
                 "duration_ms": None,
             }
         ]
+
+    asyncio.run(scenario())
+
+
+def test_diagnostics_tolerate_missing_runtime_data() -> None:
+    async def scenario() -> None:
+        entry = FakeEntry(
+            data={
+                "listen_port": 18443,
+                "control_enabled": False,
+            }
+        )
+        diagnostics = await async_get_config_entry_diagnostics(None, entry)  # type: ignore[arg-type]
+        assert diagnostics["runtime_available"] is False
+        assert diagnostics["deployment"]["listener_running"] is False
+        assert diagnostics["deployment"]["paired"] is False
+        assert diagnostics["deployment"]["control_activation_ready"] is False
+        assert "state" not in diagnostics
+        assert "protocol" not in diagnostics
 
     asyncio.run(scenario())

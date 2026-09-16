@@ -5,6 +5,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -26,6 +28,7 @@ from .const import (
     CONF_WEATHER_ENTITY,
     DEFAULT_CONTROL_ENABLED,
     FORECAST_REFRESH_MINUTES,
+    FORECAST_REQUEST_TIMEOUT_SECONDS,
     PLATFORMS,
 )
 
@@ -116,12 +119,11 @@ async def _async_load_contractor_logo(
 
 def _register_outdoor_updates(
     hass: HomeAssistant,
-    entry: ConfigEntry,
     runtime: NuveRuntime,
     *,
     outdoor_entity_id: str | None,
     weather_entity_id: str | None,
-) -> None:
+) -> list[Callable[[], None]]:
     """Project configured HA states into the thermostat's outdoor observation."""
 
     from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT
@@ -199,103 +201,179 @@ def _register_outdoor_updates(
     source_entity_ids = [
         entity_id for entity_id in (outdoor_entity_id, weather_entity_id) if entity_id
     ]
-    entry.async_on_unload(
-        async_track_state_change_event(hass, source_entity_ids, update_outdoor_temperature)
-    )
-    entry.async_on_unload(
-        async_track_state_report_event(hass, source_entity_ids, update_outdoor_temperature)
-    )
+    return [
+        async_track_state_change_event(hass, source_entity_ids, update_outdoor_temperature),
+        async_track_state_report_event(hass, source_entity_ids, update_outdoor_temperature),
+    ]
 
 
-async def _async_register_forecast_updates(
-    hass: HomeAssistant,
-    entry: ConfigEntry,
-    runtime: NuveRuntime,
-    *,
-    weather_entity_id: str,
-) -> None:
-    """Prime and register the cached daily forecast projection."""
+class _ForecastRefresh:
+    """Bound, coalesced daily-forecast projection owned by one config entry."""
 
-    from homeassistant.core import callback
-    from homeassistant.helpers.event import (
-        async_track_state_change_event,
-        async_track_time_interval,
-    )
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        runtime: NuveRuntime,
+        *,
+        weather_entity_id: str,
+    ) -> None:
+        self._hass = hass
+        self._runtime = runtime
+        self._weather_entity_id = weather_entity_id
+        self._lock = asyncio.Lock()
+        self._task: asyncio.Task[None] | None = None
+        self._repeat = False
+        self._closed = False
+        self._unsubs: list[Callable[[], None]] = []
 
-    from .weather import build_forecast_payload, display_location_name
+    def listen(self) -> None:
+        """Subscribe to source updates after the first bounded refresh."""
 
-    forecast_refresh_lock = asyncio.Lock()
+        from homeassistant.core import callback
+        from homeassistant.helpers.event import (
+            async_track_state_change_event,
+            async_track_time_interval,
+        )
 
-    async def async_refresh_forecast(*_: Any) -> None:
-        async with forecast_refresh_lock:
-            source = hass.states.get(weather_entity_id)
+        @callback
+        def refresh_forecast_from_source(*_: Any) -> None:
+            self.schedule()
+
+        self._unsubs.append(
+            async_track_state_change_event(
+                self._hass,
+                [self._weather_entity_id],
+                refresh_forecast_from_source,
+            )
+        )
+        self._unsubs.append(
+            async_track_time_interval(
+                self._hass,
+                refresh_forecast_from_source,
+                timedelta(minutes=FORECAST_REFRESH_MINUTES),
+                name="Nuve Local daily forecast refresh",
+            )
+        )
+
+    def schedule(self) -> None:
+        """Start or coalesce one in-flight refresh."""
+
+        if self._closed:
+            return
+        if self._task is not None and not self._task.done():
+            self._repeat = True
+            return
+        self._task = self._hass.async_create_task(
+            self._run_until_quiet(),
+            "Refresh Nuve Local daily forecast after source update",
+        )
+
+    async def _run_until_quiet(self) -> None:
+        try:
+            while not self._closed:
+                self._repeat = False
+                await self.async_refresh()
+                if not self._repeat:
+                    return
+        finally:
+            self._task = None
+
+    async def async_refresh(self) -> None:
+        """Fetch one bounded daily forecast without blocking the listener."""
+
+        from .weather import build_forecast_payload, display_location_name
+
+        if self._closed:
+            return
+        async with self._lock:
+            if self._closed:
+                return
+            source = self._hass.states.get(self._weather_entity_id)
             if source is None or source.state in {"unknown", "unavailable"}:
-                runtime.async_set_forecast(None, status="source_unavailable")
+                self._runtime.async_set_forecast(None, status="source_unavailable")
                 return
             try:
-                response = await hass.services.async_call(
-                    "weather",
-                    "get_forecasts",
-                    {"type": "daily"},
-                    blocking=True,
-                    target={"entity_id": weather_entity_id},
-                    return_response=True,
-                )
+                async with asyncio.timeout(FORECAST_REQUEST_TIMEOUT_SECONDS):
+                    response = await self._hass.services.async_call(
+                        "weather",
+                        "get_forecasts",
+                        {"type": "daily"},
+                        blocking=True,
+                        target={"entity_id": self._weather_entity_id},
+                        return_response=True,
+                    )
                 if not isinstance(response, dict):
                     raise TypeError("weather forecast service returned no response mapping")
-                entity_response = response.get(weather_entity_id)
+                entity_response = response.get(self._weather_entity_id)
                 forecasts = (
                     entity_response.get("forecast") if isinstance(entity_response, dict) else None
                 )
                 payload = build_forecast_payload(
                     forecasts,
                     temperature_unit=source.attributes.get("temperature_unit"),
-                    time_zone=hass.config.time_zone,
+                    time_zone=self._hass.config.time_zone,
                     city_name=display_location_name(source.name) or source.name,
-                    country=getattr(hass.config, "country", None),
-                    current_temperature_c=runtime.outdoor_temperature_c,
+                    country=getattr(self._hass.config, "country", None),
+                    current_temperature_c=self._runtime.outdoor_temperature_c,
                     current_condition=source.state,
                     current_humidity=_validated_humidity(source.attributes.get("humidity")),
                 )
+            except TimeoutError:
+                _LOGGER.warning("Timed out refreshing the configured daily weather forecast")
+                self._runtime.async_set_forecast(None, status="source_timeout")
+                return
             except Exception:  # Source integrations can fail independently of Nuve.
                 _LOGGER.warning("Unable to refresh the configured daily weather forecast")
-                runtime.async_set_forecast(None, status="source_error")
+                self._runtime.async_set_forecast(None, status="source_error")
                 return
-            runtime.async_set_forecast(
+            self._runtime.async_set_forecast(
                 payload,
                 status="ok" if payload is not None else "invalid_or_empty",
             )
 
-    await async_refresh_forecast()
+    async def async_close(self) -> None:
+        """Cancel the in-flight refresh and release source subscriptions."""
 
-    @callback
-    def refresh_forecast_from_source(*_: Any) -> None:
-        hass.async_create_task(
-            async_refresh_forecast(),
-            "Refresh Nuve Local daily forecast after source update",
-        )
+        if self._closed:
+            return
+        self._closed = True
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()
+        task = self._task
+        if task is not None and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        self._task = None
 
-    entry.async_on_unload(
-        async_track_state_change_event(
-            hass,
-            [weather_entity_id],
-            refresh_forecast_from_source,
-        )
-    )
-    entry.async_on_unload(
-        async_track_time_interval(
-            hass,
-            async_refresh_forecast,
-            timedelta(minutes=FORECAST_REFRESH_MINUTES),
-            name="Nuve Local daily forecast refresh",
-        )
-    )
+
+def _own_cleanup(
+    entry: ConfigEntry,
+    cleanups: list[Callable[[], Any]],
+    callback: Callable[[], Any],
+) -> None:
+    """Track one owned resource for both success unload and failed setup."""
+
+    cleanups.append(callback)
+    entry.async_on_unload(callback)
+
+
+async def _async_run_setup_cleanups(cleanups: list[Callable[[], Any]]) -> None:
+    """Release owned setup resources in reverse order."""
+
+    while cleanups:
+        callback = cleanups.pop()
+        result = callback()
+        if asyncio.iscoroutine(result):
+            await result
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Nuve Local from a config entry."""
 
     from homeassistant.const import EVENT_HOMEASSISTANT_STOP
+    from homeassistant.exceptions import ConfigEntryNotReady
 
     from .server import NuveApiServer
     from .storage import NuveBaselineStore
@@ -318,36 +396,50 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime.server = server
     runtime.async_set_persistence_listener(server.async_save_candidate)
     entry.runtime_data = runtime
-
-    outdoor_entity_id = config.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)
-    weather_entity_id = config.get(CONF_WEATHER_ENTITY)
-    if outdoor_entity_id or weather_entity_id:
-        _register_outdoor_updates(
-            hass,
-            entry,
-            runtime,
-            outdoor_entity_id=outdoor_entity_id,
-            weather_entity_id=weather_entity_id,
-        )
-
-    if weather_entity_id:
-        await _async_register_forecast_updates(
-            hass,
-            entry,
-            runtime,
-            weather_entity_id=weather_entity_id,
-        )
+    cleanups: list[Callable[[], Any]] = []
 
     async def async_stop_listener(_: Any) -> None:
         await server.async_stop()
 
-    entry.async_on_unload(hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_stop_listener))
     try:
-        await server.async_start()
+        try:
+            await server.async_start()
+        except OSError as err:
+            raise ConfigEntryNotReady("Nuve Local listener could not start") from err
+
+        outdoor_entity_id = config.get(CONF_OUTDOOR_TEMPERATURE_ENTITY)
+        weather_entity_id = config.get(CONF_WEATHER_ENTITY)
+        if outdoor_entity_id or weather_entity_id:
+            for unsub in _register_outdoor_updates(
+                hass,
+                runtime,
+                outdoor_entity_id=outdoor_entity_id,
+                weather_entity_id=weather_entity_id,
+            ):
+                _own_cleanup(entry, cleanups, unsub)
+
+        if weather_entity_id:
+            forecast_refresh = _ForecastRefresh(
+                hass,
+                runtime,
+                weather_entity_id=weather_entity_id,
+            )
+            runtime.forecast_refresh = forecast_refresh
+            _own_cleanup(entry, cleanups, forecast_refresh.async_close)
+            await forecast_refresh.async_refresh()
+            forecast_refresh.listen()
+
+        _own_cleanup(
+            entry,
+            cleanups,
+            hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, async_stop_listener),
+        )
         await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    except Exception:
+    except BaseException:
+        await _async_run_setup_cleanups(cleanups)
         await server.async_stop()
         raise
+
     from .repairs import NuveRepairManager
 
     repair_manager = NuveRepairManager(hass, entry.entry_id, runtime)
@@ -359,11 +451,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Unload a Nuve Local config entry."""
 
-    runtime = entry.runtime_data
+    runtime = getattr(entry, "runtime_data", None)
+    if runtime is None:
+        return True
     if not await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         return False
 
-    await runtime.server.async_stop()
+    forecast_refresh = getattr(runtime, "forecast_refresh", None)
+    if forecast_refresh is not None:
+        await forecast_refresh.async_close()
+        runtime.forecast_refresh = None
+    server = getattr(runtime, "server", None)
+    if server is not None:
+        await server.async_stop()
+    else:
+        await runtime.async_shutdown()
     return True
 
 

@@ -9,6 +9,10 @@
   active or unknown schedule authority. Commands are rechecked immediately
   before the response body is sent, including when a schedule activates after
   queuing or during persistence.
+- Start the thermostat listener before optional forecast retrieval, bound
+  forecast requests, coalesce refresh tasks, and cancel owned tasks on unload.
+  Recoverable listener bind failures now raise `ConfigEntryNotReady`, and
+  deployment status/diagnostics work when runtime data is missing.
 
 ## 0.0.3 - 2026-08-14
 
