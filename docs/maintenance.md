@@ -33,7 +33,8 @@ publication.
 1. Keep `pyproject.toml`, the integration manifest, and the changelog version in
    sync; tests enforce this.
 2. Run `scripts/check` from a clean worktree.
-3. Build the deterministic component archive with `scripts/build_release.py` and
+3. Run `scripts/check_ha_compat.sh` when claiming a Home Assistant version range.
+4. Build the deterministic component archive with `scripts/build_release.py` and
    retain its SHA-256 checksum with the manual release.
 4. Compare the complete staged and deployed component inventories before activation;
    never copy selected Python files from different revisions.
