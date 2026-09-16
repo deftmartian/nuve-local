@@ -10,10 +10,11 @@ v0.6.0: 86% overall and 92% for the control runtime across 300 tests. Later test
 deployment, scheduling, persistence, Repairs, display, installer-diagnostic, and
 command-confirmation cases, but no newer coverage percentage has been measured.
 
-A dependency audit against the locked environment found no known vulnerabilities.
-Repeat it when updating Home Assistant or another pinned dependency.
+A dependency audit of the locked 2026.9.2 environment on 2026-09-15 found no
+known vulnerabilities in OSV or PyPI. Repeat it when updating Home Assistant or
+another pinned dependency.
 
-Pyright `1.1.411` reports no findings. The only suppressions are local to six Home
+Pyright `1.1.414` reports no findings. The only suppressions are local to six Home
 Assistant entity adapters whose supported overrides conflict with Home Assistant's
 type stubs.
 
@@ -43,7 +44,7 @@ publication.
 
 Keep firmware, decompiler projects, captures, tokens, certificates, device IDs,
 contractor data, and Home Assistant storage outside the repository. Repeat the
-privacy and HACS checks before publication. Home Assistant is pinned to `2026.8.1`;
+privacy and HACS checks before publication. Home Assistant is pinned to `2026.9.2`;
 update it only with a matching live compatibility pass.
 
 Repeatable version checks use `scripts/check_ha_compat.sh`. It creates disposable

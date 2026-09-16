@@ -22,10 +22,10 @@
 ### Compatibility
 
 - Add real Home Assistant ConfigEntry lifecycle tests and a disposable
-  compatibility gate covering 2026.7.4, 2026.8.1, and current stable 2026.9.2.
+  compatibility gate covering 2026.7.4 and current stable 2026.9.2.
   Config-flow HTTP schema checks use Home Assistant 2026.9's `probatio`
   serializer with a fallback for 2026.7.4. The advertised minimum remains
-  2026.7.4.
+  2026.7.4. The development pin is 2026.9.2.
 
 ## 0.0.3 - 2026-08-14
 
