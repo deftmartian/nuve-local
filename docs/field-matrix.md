@@ -183,9 +183,10 @@ controls. A no-schedule fan On plus changed circulation duration is positively
 confirmed by a later complete Settings upload. An active-schedule test
 applied the requested fan duty but then cleared the schedule because the whole
 Settings handler supplied empty defaults to the schedule controllers. Nuve Local
-therefore permits no Settings-family write unless fresh monitor telemetry proves
-NoSchedule; active or unknown authority is a local fail-closed result, not an open
-hardware-validation item.
+therefore permits no Settings-family or Auto-range write unless fresh monitor
+telemetry proves NoSchedule; active or unknown authority is a local fail-closed
+result, not an open hardware-validation item. Control-ready indicators and block
+reasons report that same gate.
 Time format and proximity are the only advanced preferences promoted in v0.8.1 after
 independent reversible live tests. Speaker, temperature unit, sleep-logo, automatic
 clock, timezone, and DST remain unavailable because handler analysis or live

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Require confirmed `NoSchedule` telemetry for Auto-range writes, matching
+  Settings-family commands. Readiness indicators and block reasons now report
+  active or unknown schedule authority. Commands are rechecked immediately
+  before the response body is sent, including when a schedule activates after
+  queuing or during persistence.
+
 ## 0.0.3 - 2026-08-14
 
 ### Documentation

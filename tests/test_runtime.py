@@ -555,7 +555,9 @@ def test_active_schedule_poll_uses_nonapplying_preservation_response() -> None:
             "schedule",
             "schedule2",
         }.intersection(response)
-        assert runtime.control_ready is True
+        assert runtime.can_enable_control is True
+        assert runtime.control_ready is False
+        assert runtime.control_block_reason == "schedule_active"
         await runtime.async_shutdown()
 
     asyncio.run(scenario())
@@ -602,6 +604,167 @@ def test_fan_command_fails_closed_without_schedule_authority() -> None:
 
         assert runtime._pending_command is None
         assert runtime.uncertain_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("schedule_type", "reason"),
+    [
+        (2, "schedule_active"),
+        (None, "schedule_unknown"),
+    ],
+)
+def test_auto_commands_fail_closed_without_confirmed_noschedule(
+    schedule_type: int | None,
+    reason: str,
+) -> None:
+    async def scenario() -> None:
+        runtime = await _ready_runtime()
+        runtime.state = replace(runtime.state, schedule_type=schedule_type)
+
+        assert runtime.can_enable_control is True
+        assert runtime.control_ready is False
+        assert runtime.control_block_reason == reason
+        with pytest.raises(ControlNotReadyError):
+            await runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+
+        assert runtime._pending_command is None
+        assert runtime.uncertain_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_auto_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
+    async def scenario() -> None:
+        runtime = await _ready_runtime()
+        command = asyncio.create_task(
+            runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+        )
+        await asyncio.sleep(0)
+        runtime.state = replace(runtime.state, schedule_type=2)
+
+        response = await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
+
+        assert response["auto_temp_low"] == 19.0
+        assert response["auto_temp_high"] == 23.0
+        with pytest.raises(ControlNotReadyError):
+            await command
+        assert runtime._pending_command is None
+        assert runtime.uncertain_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_settings_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
+    async def scenario() -> None:
+        runtime = await _ready_runtime()
+        original = runtime._persistence_listener
+
+        async def persist_and_activate(candidate: dict[str, Any]) -> None:
+            runtime.state = replace(runtime.state, schedule_type=2)
+            assert original is not None
+            await original(candidate)
+
+        runtime.async_set_persistence_listener(persist_and_activate)
+        command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
+        await asyncio.sleep(0)
+
+        sent: list[dict[str, Any]] = []
+
+        async def capture_sender(body: dict[str, Any]) -> None:
+            sent.append(body)
+
+        response = await runtime.async_get_settings_response(
+            requested_at=datetime.now(UTC),
+            response_sender=capture_sender,
+        )
+        assert sent == []
+        assert "temp" not in response
+        with pytest.raises(CommandOutcomeUncertainError):
+            await command
+        assert runtime._pending_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_auto_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
+    async def scenario() -> None:
+        runtime = await _ready_runtime()
+        original = runtime._persistence_listener
+
+        async def persist_and_activate(candidate: dict[str, Any]) -> None:
+            runtime.state = replace(runtime.state, schedule_type=1)
+            assert original is not None
+            await original(candidate)
+
+        runtime.async_set_persistence_listener(persist_and_activate)
+        command = asyncio.create_task(
+            runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+        )
+        await asyncio.sleep(0)
+
+        sent: list[dict[str, Any]] = []
+
+        async def capture_sender(body: dict[str, Any]) -> None:
+            sent.append(body)
+
+        response = await runtime.async_get_auto_mode_response(
+            requested_at=datetime.now(UTC),
+            response_sender=capture_sender,
+        )
+        assert sent == []
+        assert response["auto_temp_low"] == 19.0
+        assert response["auto_temp_high"] == 23.0
+        with pytest.raises(CommandOutcomeUncertainError):
+            await command
+        assert runtime._pending_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_auto_command_succeeds_under_confirmed_noschedule() -> None:
+    async def scenario() -> None:
+        runtime = await _ready_runtime()
+        assert runtime.control_ready is True
+        assert runtime.control_block_reason == "ready"
+        assert runtime.schedule_authority_block_reason is None
+
+        command = asyncio.create_task(
+            runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+        )
+        await asyncio.sleep(0)
+        response = await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
+        assert response["auto_temp_low"] == 20.0
+        assert response["auto_temp_high"] == 23.0
+        await asyncio.sleep(0.002)
+        upload = {
+            "auto_temp_low": 20.0,
+            "auto_temp_high": 23.0,
+            "is_active": False,
+            "mode": "heating",
+        }
+        runtime.async_accept_auto_mode_snapshot(upload, received_at=datetime.now(UTC))
+        confirmed_at = datetime.now(UTC)
+        await runtime.async_process_monitor_state(
+            NuveState(
+                available=True,
+                last_seen=confirmed_at,
+                sample_time=confirmed_at,
+                auto_temperature_low=20.0,
+                records_received=1,
+            )
+        )
+        await command
+        assert runtime.auto_mode_snapshot is not None
+        assert runtime.auto_mode_snapshot["auto_temp_low"] == 20.0
+        assert runtime.uncertain_command is None
+        assert runtime.control_ready is True
         await runtime.async_shutdown()
 
     asyncio.run(scenario())

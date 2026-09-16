@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import struct
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -884,6 +884,125 @@ def test_real_http_active_schedule_poll_is_nonapplying_and_blocks_settings() -> 
                 )
             assert runtime._pending_command is None
             assert runtime.uncertain_command is None
+
+            with pytest.raises(ControlNotReadyError):
+                await runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+            auto_poll = await client.get(f"/api/sync/autoMode?sn={SERIAL}", headers=HEADERS)
+            auto_body = (await auto_poll.json())["data"]
+            assert auto_body["auto_temp_low"] == 19.0
+            assert auto_body["auto_temp_high"] == 23.0
+            assert runtime.control_ready is False
+            assert runtime.control_block_reason == "schedule_active"
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_real_http_auto_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
+    async def scenario() -> None:
+        server, runtime, entry = _server()
+        entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
+        runtime.paired = True
+        now = datetime.now(UTC)
+        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
+        runtime.async_accept_auto_mode_snapshot(
+            {
+                "auto_temp_low": 19.0,
+                "auto_temp_high": 23.0,
+                "is_active": False,
+                "mode": "heating",
+            },
+            received_at=now,
+        )
+        runtime.async_set_outdoor_temperature(10.0, "Test outdoor", observed_at=now)
+        await runtime.async_process_monitor_state(
+            NuveState(
+                available=True,
+                last_seen=now,
+                sample_time=now,
+                monitor_is_sync=True,
+                current_temperature=21.0,
+                target_temperature=21.5,
+                target_humidity=40.0,
+                auto_temperature_low=19.0,
+                auto_temperature_high=23.0,
+                system_type=NuveSystemType.HEAT_PUMP,
+                mode=NuveMode.HEAT,
+                schedule_type=9,
+                records_received=1,
+            )
+        )
+        runtime.control_enabled = True
+
+        async with TestClient(TestServer(server._create_app())) as client:
+            command = asyncio.create_task(
+                runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+            )
+            await asyncio.sleep(0)
+            runtime.state = replace(runtime.state, schedule_type=2)
+            polled = await client.get(f"/api/sync/autoMode?sn={SERIAL}", headers=HEADERS)
+            body = (await polled.json())["data"]
+            assert body["auto_temp_low"] == 19.0
+            assert body["auto_temp_high"] == 23.0
+            with pytest.raises(ControlNotReadyError):
+                await command
+            assert runtime._pending_command is None
+            assert runtime.uncertain_command is None
+        await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_real_http_auto_command_delivers_under_confirmed_noschedule() -> None:
+    async def scenario() -> None:
+        server, runtime, entry = _server()
+        entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
+        runtime.paired = True
+        now = datetime.now(UTC)
+        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
+        runtime.async_accept_auto_mode_snapshot(
+            {
+                "auto_temp_low": 19.0,
+                "auto_temp_high": 23.0,
+                "is_active": False,
+                "mode": "heating",
+            },
+            received_at=now,
+        )
+        runtime.async_set_outdoor_temperature(10.0, "Test outdoor", observed_at=now)
+        await runtime.async_process_monitor_state(
+            NuveState(
+                available=True,
+                last_seen=now,
+                sample_time=now,
+                monitor_is_sync=True,
+                current_temperature=21.0,
+                target_temperature=21.5,
+                target_humidity=40.0,
+                auto_temperature_low=19.0,
+                auto_temperature_high=23.0,
+                system_type=NuveSystemType.HEAT_PUMP,
+                mode=NuveMode.HEAT,
+                schedule_type=9,
+                records_received=1,
+            )
+        )
+        runtime.control_enabled = True
+
+        async with TestClient(TestServer(server._create_app())) as client:
+            command = asyncio.create_task(
+                runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
+            )
+            await asyncio.sleep(0)
+            delivered = await client.get(f"/api/sync/autoMode?sn={SERIAL}", headers=HEADERS)
+            body = (await delivered.json())["data"]
+            assert body["auto_temp_low"] == 20.0
+            assert body["auto_temp_high"] == 23.0
+            assert runtime.uncertain_command is not None
+            assert not command.done()
+            command.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await command
         await runtime.async_shutdown()
 
     asyncio.run(scenario())

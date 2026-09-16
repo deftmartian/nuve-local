@@ -381,7 +381,9 @@ class NuveRuntime:
             )
         if self.uncertain_command is not None:
             return "command_outcome_uncertain"
-        return self.control_authority_block_reason or "ready"
+        return (
+            self.control_authority_block_reason or self.schedule_authority_block_reason or "ready"
+        )
 
     @property
     def control_ready(self) -> bool:
@@ -390,9 +392,21 @@ class NuveRuntime:
         return (
             self.control_enabled
             and self.can_enable_control
+            and self.schedule_authority_block_reason is None
             and self._pending_command is None
             and self.uncertain_command is None
         )
+
+    @property
+    def schedule_authority_block_reason(self) -> str | None:
+        """Return why schedule state currently forbids HA-originated writes."""
+
+        schedule_type = self.state.schedule_type
+        if schedule_type == NO_SCHEDULE_TYPE:
+            return None
+        if schedule_type is None:
+            return "schedule_unknown"
+        return "schedule_active"
 
     @property
     def canonical_live_consistency_ready(self) -> bool:
@@ -1408,6 +1422,29 @@ class NuveRuntime:
             command_time=self.live_data_command_time or self.settings_revision,
         )
 
+    def _canonical_auto_mode_response(self) -> dict[str, Any]:
+        """Return the last confirmed Auto snapshot without applying a queued change."""
+
+        assert self.auto_mode_revision is not None
+        assert self.auto_mode_snapshot is not None
+        return render_auto_mode_response(
+            revision=self.auto_mode_revision,
+            settings=self.auto_mode_snapshot,
+        )
+
+    def _reject_blocked_pending(self, pending: PendingCommand) -> dict[str, Any] | None:
+        """Withdraw a queued command that must not reach the response body."""
+
+        if self.schedule_authority_block_reason is not None:
+            self._complete_pending("outcome_uncertain" if pending.delivered else "not_ready")
+            if pending.kind == "settings":
+                return self._schedule_preserving_settings_response()
+            return self._canonical_auto_mode_response()
+        if not self.can_enable_control:
+            self._complete_pending("outcome_uncertain" if pending.delivered else "not_ready")
+            return {}
+        return None
+
     async def _async_monitor_resync_response(
         self,
         *,
@@ -1515,14 +1552,9 @@ class NuveRuntime:
 
             pending = self._pending_command
             if pending is not None and pending.kind == "settings":
-                if self.state.schedule_type != NO_SCHEDULE_TYPE:
-                    self._complete_pending("not_ready")
-                    return self._schedule_preserving_settings_response()
-                if not self.can_enable_control:
-                    self._complete_pending(
-                        "outcome_uncertain" if pending.delivered else "not_ready"
-                    )
-                    return {}
+                blocked = self._reject_blocked_pending(pending)
+                if blocked is not None:
+                    return blocked
                 if not pending.delivered:
                     prior = self._latest_revision(
                         self._latest_revision(self.settings_revision, self.settings_revision_floor),
@@ -1548,13 +1580,9 @@ class NuveRuntime:
                         self._notify_listeners()
 
                     await self._async_persist_and_commit(candidate, commit_delivery)
-                    if not self.can_enable_control:
-                        # The write-ahead journal is durable, but a readiness
-                        # dependency changed while storage I/O was in flight.
-                        # Do not expose desired state; retain uncertainty because
-                        # the HTTP delivery boundary is now ambiguous.
-                        self._complete_pending("outcome_uncertain")
-                        return {}
+                    blocked = self._reject_blocked_pending(pending)
+                    if blocked is not None:
+                        return blocked
                 assert pending.revision is not None
                 technician_url = self._effective_technician_url()
                 assert technician_url is not None
@@ -1625,11 +1653,9 @@ class NuveRuntime:
             self._monitor_resync_auto_companion_revision = None
             pending = self._pending_command
             if pending is not None and pending.kind == "auto":
-                if not self.can_enable_control:
-                    self._complete_pending(
-                        "outcome_uncertain" if pending.delivered else "not_ready"
-                    )
-                    return {}
+                blocked = self._reject_blocked_pending(pending)
+                if blocked is not None:
+                    return blocked
                 if not pending.delivered:
                     prior = self._latest_revision(
                         self._latest_revision(self.auto_mode_revision, self.auto_revision_floor),
@@ -1655,9 +1681,9 @@ class NuveRuntime:
                         self._notify_listeners()
 
                     await self._async_persist_and_commit(candidate, commit_delivery)
-                    if not self.can_enable_control:
-                        self._complete_pending("outcome_uncertain")
-                        return {}
+                    blocked = self._reject_blocked_pending(pending)
+                    if blocked is not None:
+                        return blocked
                 assert pending.revision is not None
                 response = render_auto_mode_response(
                     revision=pending.revision,
@@ -1669,12 +1695,7 @@ class NuveRuntime:
                     requested_at=requested_at,
                     response_sender=response_sender,
                 )
-            assert self.auto_mode_revision is not None
-            assert self.auto_mode_snapshot is not None
-            return render_auto_mode_response(
-                revision=self.auto_mode_revision,
-                settings=self.auto_mode_snapshot,
-            )
+            return self._canonical_auto_mode_response()
 
     async def _async_deliver_pending_response(
         self,
@@ -1691,6 +1712,10 @@ class NuveRuntime:
         durable before that write. Only after the body has been sent do we
         persist the server time from which device-clock skew is measured.
         """
+
+        blocked = self._reject_blocked_pending(pending)
+        if blocked is not None:
+            return blocked
 
         if response_sender is not None:
             await response_sender(copy.deepcopy(response))
@@ -1727,7 +1752,7 @@ class NuveRuntime:
         # The body may already have reached the thermostat. If any safety gate
         # changed during the send/final journal write, resolve the HA caller as
         # uncertain and retain the durable lockout.
-        if not self.can_enable_control:
+        if not self.can_enable_control or self.schedule_authority_block_reason is not None:
             self._complete_pending("outcome_uncertain")
         return response
 
@@ -1736,8 +1761,6 @@ class NuveRuntime:
 
         async with self._transaction_lock:
             self._assert_ready("settings")
-            if self.state.schedule_type != NO_SCHEDULE_TYPE:
-                raise ControlNotReadyError
             assert self.settings_snapshot is not None
             desired = self._validated_settings_changes(changes)
             desired = self._expand_settings_changes(self.settings_snapshot, desired)
@@ -1834,6 +1857,8 @@ class NuveRuntime:
         if self._pending_command is not None:
             raise ControlBusyError
         if not self.can_enable_control:
+            raise ControlNotReadyError
+        if self.schedule_authority_block_reason is not None:
             raise ControlNotReadyError
         if kind == "auto" and not self.has_auto_mode_baseline:
             raise ControlNotReadyError
