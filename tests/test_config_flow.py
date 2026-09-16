@@ -11,7 +11,6 @@ from typing import Any
 
 import pytest
 import voluptuous as vol
-import voluptuous_serialize
 from homeassistant.helpers import config_validation as cv
 
 from custom_components.nuve_local import async_migrate_entry
@@ -73,6 +72,18 @@ from tests.helpers import attach_memory_persistence
 @dataclass
 class FakeEntry:
     runtime_data: NuveRuntime | None
+
+
+def _http_flow_schema(schema: vol.Schema) -> list[dict[str, Any]]:
+    """Serialize a config-flow schema the same way Home Assistant's HTTP API does."""
+
+    try:
+        from probatio import to_field_list
+    except ImportError:
+        import voluptuous_serialize
+
+        return voluptuous_serialize.convert(schema, custom_serializer=cv.custom_serializer)
+    return to_field_list(schema, custom_serializer=cv.custom_serializer)
 
 
 def _valid_commissioning(**changes: object) -> dict[str, object]:
@@ -338,7 +349,7 @@ def test_commissioning_requires_exact_confirmed_metadata() -> None:
 
 def test_commissioning_schema_is_http_flow_serializable() -> None:
     schema = _commissioning_schema({CONF_TEMP_CORRECTION_VERSION: 1})
-    serialized = voluptuous_serialize.convert(schema, custom_serializer=cv.custom_serializer)
+    serialized = _http_flow_schema(schema)
     marker = next(field for field in serialized if field["name"] == CONF_TEMP_CORRECTION_VERSION)
     assert marker["default"] == "1"
     assert marker["selector"]["select"]["options"] == ["1", "2", "3"]

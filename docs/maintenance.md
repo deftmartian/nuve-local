@@ -45,3 +45,8 @@ Keep firmware, decompiler projects, captures, tokens, certificates, device IDs,
 contractor data, and Home Assistant storage outside the repository. Repeat the
 privacy and HACS checks before publication. Home Assistant is pinned to `2026.8.1`;
 update it only with a matching live compatibility pass.
+
+Repeatable version checks use `scripts/check_ha_compat.sh`. It creates disposable
+environments for the advertised minimum (`2026.7.4`), the development pin, and
+current stable. Do not raise `hacs.json`'s Home Assistant minimum unless that
+gate finds a concrete requirement.
