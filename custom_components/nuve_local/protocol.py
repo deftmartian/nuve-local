@@ -227,7 +227,7 @@ def normalize_night_mode_time(value: Any, *, name: str) -> str:
 
     if (
         not isinstance(value, str)
-        or re.fullmatch(r"(?:[01]\d|2[0-3]):[0-5]\d(?::00)?", value) is None
+        or re.fullmatch(r"(?:[01][0-9]|2[0-3]):[0-5][0-9](?::00)?", value) is None
     ):
         raise NuveProtocolError(f"{name} must be HH:MM or HH:MM:00")
     return value[:5]

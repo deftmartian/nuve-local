@@ -9,6 +9,7 @@ import pytest
 from custom_components.nuve_local.protocol import (
     NuveProtocolError,
     next_revision,
+    normalize_night_mode_time,
     parse_auto_mode_baseline,
     parse_auto_mode_upload,
     parse_current_sensors_upload,
@@ -306,3 +307,14 @@ def test_revision_is_utc_second_resolution_and_strictly_increasing() -> None:
             "2026-08-09T03:45:01Z",
             now=datetime(2026, 8, 9, 3, 45, 2, tzinfo=UTC),
         )
+
+
+@pytest.mark.parametrize("value", ["22:30", "07:05:00"])
+def test_night_mode_time_accepts_firmware_minutes(value: str) -> None:
+    assert normalize_night_mode_time(value, name="t") == value[:5]
+
+
+@pytest.mark.parametrize("value", ["0\u0667:30", "24:00", "7:30", "07:30:01", "07:30\n"])
+def test_night_mode_time_rejects_non_ascii_and_malformed_values(value: str) -> None:
+    with pytest.raises(NuveProtocolError):
+        normalize_night_mode_time(value, name="t")
