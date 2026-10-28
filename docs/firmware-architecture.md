@@ -55,8 +55,9 @@ the GPIO direction defect are mapped in
 [hardware-bus-map.md](hardware-bus-map.md). Hash-bound photographs of the installed
 `HVAC021-C2-MAIN` additionally establish an nRF52832-QFAA, 4 GB
 `THGBMTG5D1LBAIL` eMMC, AP6256 radio module, PF0100 PMIC, NAU88C22 codec, and
-i.MX6/RAM markings. TI and nRF52832 firmware, pad ownership, and board electrical
-behavior remain unknown.
+i.MX6/RAM markings. The nRF52832 application image is recovered from `appStherm`
+(see [nRF firmware](nrf-firmware.md)); TI firmware, the nRF bootloader, pad
+ownership, and board electrical behavior remain unknown.
 
 Normal API traffic uses verified TLS, but update and recovery paths lack publisher
 authentication and the recovery image enables root SSH. See

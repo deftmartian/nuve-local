@@ -30,6 +30,7 @@ Start with the page that matches your task.
 | [Scheduling](scheduling-protocol.md) | V1/V2 schedules, holds, conflicts, and failure behavior |
 | [Persistence](persistence-schema.md) | Saved object graph, timing, and corruption behavior |
 | [Remote sensors](remote-sensors.md) | Sensor UI, pairing, and TI/NRF data paths |
+| [nRF firmware](nrf-firmware.md) | nRF52832 application image, UART protocol, sensors, and DFU update path |
 | [Screen lock](lock-protocol.md) | Local PIN state and server lock path |
 | [Equipment test](performance-test.md) | Performance-test state machine and relay risk |
 | [Installer and warranty APIs](installer-private-api.md) | Private onboarding and identity workflows |

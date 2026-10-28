@@ -118,7 +118,8 @@ they are disconnected or internally inconsistent.
 
 ## Remaining unknowns
 
-- **U:** photographed nRF52832 firmware, radio protocol/configuration, calibration,
+- **U:** radio protocol/configuration (the recovered nRF52832 application image has
+  no radio use; see [nRF firmware](nrf-firmware.md)), calibration,
   battery/signal ingestion, and actual board-side pairing behavior;
 - **U:** vendor-server acceptance and interpretation of the literal UID and lossy
   location mapping;

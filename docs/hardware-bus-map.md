@@ -84,7 +84,7 @@ the application's later termios configuration is authoritative for its session.
 | DT alias / controller | Linux device | Exact application owner | Role | Status |
 | --- | --- | --- | --- | --- |
 | serial0 / UART1 `0x02020000` | Console | No application transport owner | Boot/kernel console | DT `okay` |
-| serial1 / UART2 `0x02024000` | `/dev/ttymxc1` | `createNRF` (`0x32c16c`) | NRF-side sensors, ToF/luminosity, and related responses | DT `okay`; app 9600 8N1 |
+| serial1 / UART2 `0x02024000` | `/dev/ttymxc1` | `createNRF` (`0x32c16c`) | NRF-side sensors, ToF/luminosity, and related responses | DT `okay`; app 9600 8N1 ; protocol and DFU path in [nRF firmware](nrf-firmware.md) |
 | serial2 / UART3 `0x02034000` | Expected `/dev/ttymxc2` | None established | Enabled but application-unowned | DT `okay`; physical use unknown |
 | serial3 / UART4 `0x02038000` | `/dev/ttymxc3` | `createTIConnection` (`0x3330f8`) | HVAC controller requests, responses, relay delivery, heartbeat | DT `okay`; app 9600 8N1 |
 | serial4 / UART5 `0x02018000` | Not used | None | No active path | DT `disabled` |
@@ -270,7 +270,7 @@ recovery filesystem, configuration, captures, or credentials into the worktree.
 | Unknown | Why static application/DT evidence cannot close it | Required evidence |
 | --- | --- | --- |
 | TI-side MCU, firmware, terminal electrical design, and heartbeat/reset behavior | The i.MX6 sees only UART packets and responses; the separate HVAC controller is not visible in the mainboard photographs | Exact secondary board photographs, firmware, and schematic/BOM; isolated donor-board harness if permitted |
-| nRF52832 firmware, readback-protection state, sensor drivers, algorithms, calibration, and pairing | U18 establishes the installed MCU identity, while the i.MX6 receives only processed values and interrupt indications | Exact nRF52832 firmware/vendor protocol plus schematic/BOM; protection-status or continuity work only on a donor board |
+| nRF52832 bootloader, readback-protection state, installed-image readback, and sensor calibration | The application image embedded in `appStherm` is decoded ([nRF firmware](nrf-firmware.md)); its bootloader and the installed part are not available | nRF bootloader or readback plus schematic/BOM; protection-status or continuity work only on a donor board |
 | GPIO21/22 pad/net/pull/electrical mapping and restart behavior after invalid direction write | Linux global number and app literals do not establish board wiring or all sysfs initial states | Schematic/kernel source plus cloned-kernel sysfs harness; optional isolated logic trace |
 | GPIO102 recovery-button identity and polarity | U-Boot numeric read has no DT button description | Schematic or separately approved read-only physical correlation with HVAC isolated |
 | UART3 and SSI physical ownership | Enabled DT nodes have no exact application consumer | Schematic and boot/runtime ownership evidence |
