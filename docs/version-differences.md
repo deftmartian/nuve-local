@@ -21,7 +21,7 @@ analysis. The clean 1.5.8 recovery application remains the only canonical target
 for the comprehensive behavior model.
 
 The missing 1.6.1.1 file is a hard boundary. Earlier work recorded targeted findings
-and v0.7.0 still contains a historical exact-version allowlist entry, but this
+and a pre-release build still contained an exact-version allowlist entry, but this
 research pass cannot rerun its symbol, native, QV4, route, persistence, hardware, or
 security audit. It must not be used to infer compatibility with 1.5.8 or with a
 future build.
@@ -61,8 +61,8 @@ survive while its owner changes. The 1.5.8 contracts in
 [api-contract-catalog.md](api-contract-catalog.md) remain 1.5.8-only unless the
 corresponding old owner/callback was separately compared.
 
-Earlier targeted native comparison covered the v0.6 Settings/Auto/monitor/weather
-surface and embedded monitor descriptor. The new structural comparison does not
+Earlier targeted native comparison covered the Settings/Auto/monitor/weather
+surface supported by a pre-release build and embedded monitor descriptor. The new structural comparison does not
 silently extend that result to schedules, installer, lock, reset, updater,
 performance test, or other private paths.
 
@@ -152,7 +152,7 @@ Prior work associated the absent 1.6.1.1 hash with these targeted differences:
 - startup also sets `READY_CONF=1` after loading the device configuration;
 - the contractor image path changes from `/home/root/customIcon.png` to
   `/usr/local/bin/customIcon.png`; and
-- temperature-correction model 3 was included in the v0.6.0 exact-version profile.
+- temperature-correction model 3 was included in the exact-version profile of a pre-release build.
 
 Those findings are historical context, not currently reproducible evidence. The
 application and update files must be reacquired, checked against
@@ -196,7 +196,7 @@ instructions, decompiled code, device identifiers, or credentials.
 
 | ID | Gap | Required evidence |
 | --- | --- | --- |
-| VER-U02 | Native body parity outside the previously targeted v0.6 paths | Hash-bound dual-project decompilation and normalized call/state comparison by symbol, never by reused address |
+| VER-U02 | Native body parity outside the previously targeted integration paths | Hash-bound dual-project decompilation and normalized call/state comparison by symbol, never by reused address |
 | VER-U03 | Complete 1.5.7.4 filesystem/kernel/DT/service/update-container comparison | Reacquire the update or a complete clean root and inventory it separately from the corrupted live snapshot |
 | VER-U04 | Reproducible 1.6.1.1 behavior | Reacquire exact update/app files matching the recorded hashes and rerun every phase |
 | VER-U05 | Android/mobile protocol differences | Reacquire and hash the three historical APK splits; keep mobile behavior separate from thermostat firmware |

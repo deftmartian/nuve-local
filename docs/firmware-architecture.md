@@ -12,7 +12,7 @@ controllers handle HVAC and sensor-side hardware over UART.
 The structural review covers all 1,955 first-party executable functions and 1,128
 recognized QV4 event handlers. That establishes coverage, not full semantic
 understanding of every helper. Counts and reproduction details are in
-[Function inventory](function-inventory.md) and
+[Function inventory](firmware-evidence.md#function-and-qv4-inventory) and
 [UI action register](ui-action-register.md).
 
 ## System model
@@ -427,7 +427,7 @@ latch set. It still does not directly write p1/p2. The high-level DNS/fetch queu
 notification/manual/server selection, timer/retry gates, and restart latch are
 covered by an emulator; fault-injected filesystem and service outcomes remain open. Nuve
 Local exposes neither update nor recovery commands. See
-[application-update.md](application-update.md) and [recovery-updater.md](recovery-updater.md).
+[application-update.md](application-update.md) (application and recovery updaters).
 
 The endpoint inventory follows the same boundary. Ordinary sync, live telemetry,
 weather, and contractor display paths are implemented narrowly. Server-owned

@@ -3,43 +3,30 @@
 Run `scripts/check` before every commit and release. It checks the lock file, Ruff,
 formatting, repository metadata, Pyright, and the full test suite.
 
-## Current quality baseline
+## Quality gates
 
-As of 2026-09-15, `scripts/check` plus the Home Assistant lifecycle tests pass.
-Measured coverage of `custom_components/nuve_local` is 87% overall and 93% for
-`runtime.py`. The earlier v0.6.0 figures (86% overall and 92% runtime across 300
-tests) remain historical evidence from the private series.
+- `scripts/check` and the Home Assistant lifecycle tests must pass.
+- Pyright runs with no findings. The only suppressions are local to the Home
+  Assistant entity adapters whose supported overrides conflict with Home Assistant's
+  type stubs.
+- Ruff enforces a maximum McCabe complexity of 15.
+- Hassfest must report a valid integration. HACS validation requires a public GitHub
+  projection and must run before publication.
+- Before publication, run a secret scan (for example Gitleaks) and check for private
+  keys, tokens, private IPs, sensitive archives, and large files. The public
+  `devapi11.nuvehvac.com` hostname is an expected false positive.
 
-A fresh OSV and PyPI audit on 2026-09-15 found three distinct advisories in
-`cryptography==48.0.1`: CVE-2026-69247 (PKCS#7 decryption oracle), CVE-2026-69248
-(DNS name-constraint verification), and CVE-2026-69249 (certificate-verification
-resource exhaustion). Home Assistant 2026.9.2 requires that exact version; the
-complete set is fixed in cryptography 50.0.0. The dependency remains upstream-pinned
-rather than overriding Home Assistant's tested requirements.
+## Known dependency advisory
 
-Nuve's shipped runtime does not import cryptography or invoke those affected APIs.
-Its certificate tests use generated local keys/certificates, and the release ZIP
-contains no development dependencies. This is an outstanding development-environment
-audit finding, not a claim that the wider HA installation is unaffected. Re-audit
-and update with an upstream-compatible HA pin when available.
-
-Sources: [PKCS#7 advisory](https://github.com/advisories/GHSA-g6cj-pr64-35w5),
-[DNS constraints](https://github.com/advisories/GHSA-m2h6-j472-rp4c), and
-[verification exhaustion](https://github.com/advisories/GHSA-jwv3-5hgf-82ww).
-
-Pyright `1.1.414` reports no findings. The only suppressions are local to six Home
-Assistant entity adapters whose supported overrides conflict with Home Assistant's
-type stubs.
-
-Ruff enforces a maximum McCabe complexity of 15.
-
-Hassfest reports one valid integration and no invalid integrations. HACS validation
-requires a public GitHub projection and must run before publication.
-
-On 2026-08-10, Gitleaks `8.30.1` found only two false positives: the public
-`devapi11.nuvehvac.com` hostname. Separate checks found no private keys, tokens,
-private IPs, sensitive archives, or files over one MiB. Repeat the audit before
-publication.
+Home Assistant 2026.9.2 pins `cryptography==48.0.1`, which has three published
+advisories fixed in 50.0.0
+([PKCS#7](https://github.com/advisories/GHSA-g6cj-pr64-35w5),
+[DNS constraints](https://github.com/advisories/GHSA-m2h6-j472-rp4c),
+[verification exhaustion](https://github.com/advisories/GHSA-jwv3-5hgf-82ww)).
+Nuve's shipped runtime does not import cryptography, its certificate tests use only
+generated local keys, and the release ZIP has no development dependencies. This is a
+development-environment finding, not a claim about the wider Home Assistant
+installation. Re-audit when an upstream-compatible Home Assistant pin is available.
 
 ## Release discipline
 

@@ -86,27 +86,19 @@ The boot image contains:
 
 ## Application update and reset boundaries
 
-Application update ZIPs are separate from the U-Boot image paths. The exact client
-downloads metadata and payloads over HTTP with a stable MD5-of-serial query ID,
-checks the archive with MD5 before and after writing it, and installs it in place
-under `/usr/local/bin`. The helper has no fail-fast mode, command-result checks,
-staging rename, backup, A/B slot, or rollback. It unconditionally cleans the source
-and exits zero, so a failed unpack/copy/start can be masked and its systemd
-`Restart=on-failure` policy will not retry it. See
-[application-update.md](application-update.md) for the modeled state transitions.
-
-The emulator covers notification/manual/server selection, DNS/fetch queues, timers,
-retries, and the restart latch. Real
-filesystem/process/power-loss outcomes remain unresolved. The application-managed
-`RecoveryUpdater` stages over HTTP, copies manifest-named files into p4, and can
-therefore replace the `boot.gz`/`root.gz` sources used by a later factory restore.
-It does not itself write p1/p2. See [recovery-updater.md](recovery-updater.md). No
-application or recovery update instruction is exposed by Nuve Local.
+Application update ZIPs and the application-managed recovery updater are separate
+from the U-Boot image paths. The application installs ZIPs in place under
+`/usr/local/bin`; `RecoveryUpdater` only replaces manifest-named `boot.gz`/`root.gz`
+sources on p4, which a later factory restore may consume, and never writes p1/p2
+itself. Both are documented in
+[application-update.md](application-update.md#application-managed-recovery-updater).
+No application or recovery update instruction is exposed by Nuve Local.
 
 The touchscreen Factory Reset is also separate: exact application code clears
 registration, Wi-Fi/application state, and log data. It does not run the U-Boot
 factory restore, repair ext4, or rewrite p1/p2. Device forget, application reset,
-image update, and factory restore remain distinct hazardous workflows.
+image update, and factory restore remain distinct hazardous workflows
+([messages-reset-api.md](messages-reset-api.md#device-forget-and-application-reset)).
 
 ## Security and operating boundary
 
