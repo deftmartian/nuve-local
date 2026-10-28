@@ -176,10 +176,7 @@ labels are unclear, and installer settings cannot be changed.
 
 ## Release boundary
 
-Pre-public labels such as v0.8 and v0.8.1 below are historical evidence, not the
-public 0.0.x series.
-
-Core v0.8 includes the exact local sync/control model, monitor telemetry, categorical
+The integration core includes the exact local sync/control model, monitor telemetry, categorical
 IAQ, positive pressure, current weather/forecast, contractor route, value-free
 runtime event trace, fan mode/minutes-per-hour controls, and field-owning display
 controls. A no-schedule fan On plus changed circulation duration is positively
@@ -190,7 +187,7 @@ therefore permits no Settings-family or Auto-range write unless fresh monitor
 telemetry proves NoSchedule; active or unknown authority is a local fail-closed
 result, not an open hardware-validation item. Control-ready indicators and block
 reasons report that same gate.
-Time format and proximity are the only advanced preferences promoted in v0.8.1 after
+Time format and proximity are the only advanced preferences promoted after
 independent reversible live tests. Speaker, temperature unit, sleep-logo, automatic
 clock, timezone, and DST remain unavailable because handler analysis or live
 tests produced rejected owners, delayed application, or unrelated target/cooling
