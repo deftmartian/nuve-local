@@ -27,10 +27,8 @@ Off, Vacation, or the separate vacation flag state.
 These are **A (exact static)** findings. The response-coercion, packet, capacity,
 activity-selection, hold, retry, legacy-range, overlap, activation, and migration
 claims below are also reproduced by the isolated
-[`emulate_firmware_schedule_v2.py`](../scripts/emulate_firmware_schedule_v2.py) and
-[`emulate_firmware_schedule_v1.py`](../scripts/emulate_firmware_schedule_v1.py)
-models and tests, giving those reproduced behaviors **B (emulated)** evidence.
-The generic [target-runtime probe](../scripts/qt6_schedule_runtime_probe.cpp) and a
+private V2 and V1 schedule emulator models and tests, giving those reproduced behaviors **B (emulated)** evidence.
+The generic private target-runtime probe and a
 networkless ARM execution of the exact application add B evidence for the Qt 6.4
 time and persistence boundaries described below.
 
@@ -213,7 +211,7 @@ No field or row is translated to V2. Offline acceptance still deletes the local
 rows and retains only the clear-all queue for later processing. This is a destructive
 migration choice and is not suitable for automatic Home Assistant activation.
 
-The independent [V1 emulator](../scripts/emulate_firmware_schedule_v1.py) reproduces
+The independent private V1 emulator reproduces
 the packet member selection, identity reconciliation, adjusted range boundaries,
 overnight split, overlap, first-match activation gates, one-shot state transitions
 and overnight defect, and both migration choices.

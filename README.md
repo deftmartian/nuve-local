@@ -142,20 +142,14 @@ integration does not call either path. See [Security and privacy](docs/security-
 
 ## Hardware and firmware research
 
-[Thermostat platform](docs/thermostat-platform.md) is the best starting point for the
-processor, memory, storage, radios, display, Linux/Qt stack, partitions, and
-controller layout. Deeper references include:
-
-- [Firmware architecture](docs/firmware-architecture.md)
-- [Firmware evidence](docs/firmware-evidence.md)
-- [API catalog](docs/api-contract-catalog.md)
-- [Hardware and bus map](docs/hardware-bus-map.md)
-- [Open questions](docs/remaining-unknowns.md)
-
-Raw firmware, captures, password verifiers, device identifiers, and household
-configuration are not stored in Git.
-
-See the [documentation index](docs/README.md) for every research and subsystem page.
+[Thermostat platform](docs/thermostat-platform.md) and
+[Firmware architecture](docs/firmware-architecture.md) summarize the hardware and
+software the integration depends on, and the [API catalog](docs/api-contract-catalog.md)
+lists every thermostat route and whether Nuve Local supports it. The detailed
+reverse-engineering research, tooling, and artifact inventories are kept in a private
+repository; raw firmware, captures, password verifiers, device identifiers, and
+household configuration are not stored in Git. See the
+[documentation index](docs/README.md) for the public pages.
 
 ## Development
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import tomllib
 from pathlib import Path
 
@@ -26,3 +27,17 @@ def test_english_translation_matches_source_strings() -> None:
     )
 
     assert translation == strings
+
+
+def test_public_markdown_links_resolve() -> None:
+    """Research notes live in a private repository; public docs must not link to them."""
+    pages = [ROOT / "README.md", ROOT / "CHANGELOG.md", *sorted((ROOT / "docs").glob("*.md"))]
+    missing = []
+    for page in pages:
+        for target in re.findall(r"\]\(([^)\s]+)\)", page.read_text()):
+            path = target.split("#", 1)[0]
+            if not path or re.match(r"[a-z]+:", path):
+                continue
+            if not (page.parent / path).exists():
+                missing.append(f"{page.relative_to(ROOT)} -> {target}")
+    assert not missing

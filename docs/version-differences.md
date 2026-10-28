@@ -6,13 +6,13 @@ not be carried from one build to another without comparing the files.
 
 ## Current artifact status
 
-| Version/artifact | Size | SHA-256 | Current evidence status |
+| Version/artifact | Size | Identity | Current evidence status |
 | --- | ---: | --- | --- |
-| Live-snapshot `appStherm` 1.5.7.4 | 32,219,360 | `d07abe078039843c7627f80bbc634808aa7679e35a13f06974c7ec6fe8007cc4` | Exact application bytes are present in three byte-identical reconstructed overlay candidates tied to the retained live snapshot; not a clean update container or preferred restore source |
-| Recovery `appStherm` 1.5.8 | 32,219,628 | `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e` | Complete canonical exact application from the clean verified recovery root |
-| Historical update 1.5.7.4 | Unknown in current corpus | `cce9f46a118e77565738fa1d9b2bb956b57ad52cb8e9f4effbd074428d606241` | Hash-only record; container absent |
-| Historical update 1.6.1.1 | Unknown in current corpus | `1bbf1ffea013ad84700326c9ef5f6e0414df8243d34dae8508f4bc1726e61e9c` | Hash-only record; container absent |
-| Historical `appStherm` 1.6.1.1 | Unknown in current corpus | `b1143c2c4bbdf57ca0772f6dc7c9e1ec2996fa9c114e7068852498af3f06cec7` | Hash-only record; application absent and current behavior is not reproducible |
+| Live-snapshot `appStherm` 1.5.7.4 | 32,219,360 | Hash kept in private research notes | Exact application bytes are present in reconstructed overlay candidates tied to a retained live snapshot; not a clean update container or preferred restore source |
+| Recovery `appStherm` 1.5.8 | 32,219,628 | SHA-256 `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e` | Complete canonical exact application from the clean verified recovery root |
+| Historical update 1.5.7.4 | Unknown | Hash-only record in private research notes | Container absent |
+| Historical update 1.6.1.1 | Unknown | Hash-only record in private research notes | Container absent |
+| Historical `appStherm` 1.6.1.1 | Unknown | Hash-only record in private research notes | Application absent and current behavior is not reproducible |
 
 The three 1.5.7.4 candidate files have the same size and hash. Their reconstruction
 status limits filesystem/restore provenance, but it does not make their application
@@ -30,7 +30,7 @@ future build.
 
 | Property | 1.5.7.4 | 1.5.8 |
 | --- | --- | --- |
-| GNU build ID | `43f2786a365608daa332df17ba757cabb9ca7d84` | `4fe9630e8e330c3cac7d364d9274ae0a2b6c6f2c` |
+| GNU build ID | Recorded privately | Recorded privately |
 | ELF type/architecture | ELF32 little-endian ARM PIE, EABI5 hard-float | Same format |
 | Entry point | `0x443ed` | `0x44409` |
 | Defined symbol rows | 48,207 | 48,220 |
@@ -75,7 +75,7 @@ Both applications decode against the exact retained Qt 6.4.0 instruction header.
 | QV4 units | 307 | 308 |
 | QV4 function records | 8,995 | 8,988 |
 | Decoded instructions | 102,253 | 102,236 |
-| Unit-corpus SHA-256 | `1ff9d28077f247bd6825bfdf0aa222c4b7e5fd05fa5b8756902dbb4ef9ad2225` | `b0f2bbb2bad5c537ce4addf739c9bebed67ae974b3a09fdbbe864ed7b66be788` |
+| Unit-corpus SHA-256 | Recorded privately | Recorded privately |
 
 All 307 old unit symbols exist in 1.5.8. Of those, 303 unit byte ranges are
 byte-identical. Four changed, and one unit was added:
@@ -132,14 +132,14 @@ question.
 
 These exact QV4 byte ranges are identical between the two present builds:
 
-| Unit | Size/functions | Unit SHA-256 |
-| --- | ---: | --- |
-| `Core_Backlight_qml` | 1,760 / 3 | `b622ce88937d0fd1506ebd22a443ef0eaae29d0278f3d2f3e1c2d6fbb705b32a` |
-| `Core_DeviceController_qml` | 173,704 / 286 | `4b56d58151d33213aa8d54768d5d2819ef7c5b091db676a44cf80f7e1e25e81a` |
-| `Core_I_DeviceController_qml` | 7,624 / 25 | `a2b7c5f1044898d7970d3453fcc2165c4fe0904f4db90f17c310b36915bc1db4` |
-| `Core_Setting_qml` | 3,184 / 5 | `a6ac617addc4f06eee1c11b86a3591e8f1b2ee9882d7b0a6ea38b1a70556214d` |
-| `View_BacklightPage_qml` | 20,600 / 56 | `d58f3fbddced4a2482cec8f4cc5331c1d52e41a4c249e79123b923fb7daf2664` |
-| `View_WeatherPage_qml` | 35,960 / 132 | `d6e06ae5f069fa37cf61d0420bf0cfc663d5562b92c48c2d945ddd44c3a0cbb9` |
+| Unit | Size/functions |
+| --- | ---: |
+| `Core_Backlight_qml` | 1,760 / 3 |
+| `Core_DeviceController_qml` | 173,704 / 286 |
+| `Core_I_DeviceController_qml` | 7,624 / 25 |
+| `Core_Setting_qml` | 3,184 / 5 |
+| `View_BacklightPage_qml` | 20,600 / 56 |
+| `View_WeatherPage_qml` | 35,960 / 132 |
 
 Byte identity establishes exact parity for those compiled units only. Native
 objects they call, filesystem state, recovery image, API service, and secondary
@@ -167,30 +167,9 @@ may be added by version range.
 
 ## Reproduction
 
-Generate a private QV4 inventory and selected first-party symbol inventory for each
-exact binary using the checked-in analysis skill, then compare only matching
-reports:
-
-```bash
-.venv/bin/python .agents/skills/analyze-nuve-firmware/scripts/inventory_qt6_qv4.py \
-  <old-app> --instruction-header <qt-6.4.0-qv4instr_moth_p.h> \
-  > <private-old-qv4-report>
-
-.venv/bin/python .agents/skills/analyze-nuve-firmware/scripts/inventory_symbols.py \
-  <old-app> --format json > <private-old-symbol-report>
-
-.venv/bin/python scripts/compare_firmware_versions.py \
-  <old-app> <new-app> \
-  --old-qv4-report <private-old-qv4-report> \
-  --new-qv4-report <private-new-qv4-report> \
-  --old-symbol-report <private-old-symbol-report> \
-  --new-symbol-report <private-new-symbol-report>
-```
-
-The comparison tool verifies every report's binary hash before use. It emits only
-binary hashes/sizes, catalog-route presence, structural counts, changed unit names,
-and selected symbol-name/type differences. It never emits binary/QV4 bytes,
-instructions, decompiled code, device identifiers, or credentials.
+The comparison method and tooling are kept in private research notes. It compares only
+reports bound to the exact binary hashes and never emits binary bytes, instructions,
+decompiled code, device identifiers, or credentials.
 
 ## Remaining version gaps
 

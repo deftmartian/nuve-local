@@ -16,32 +16,20 @@ Start with the page that matches your task.
 | Page | Use it for |
 | --- | --- |
 | [Firmware architecture](firmware-architecture.md) | State flow, HVAC logic, telemetry, hardware ownership, and updates |
-| [Firmware evidence](firmware-evidence.md) | Protocol behavior, evidence grades, claim ledger, safety-requirement traceability, and native/QV4 inventory |
 | [Field matrix](field-matrix.md) | Every recovered field and its Home Assistant status |
 | [API catalog](api-contract-catalog.md) | All thermostat API routes and whether Nuve Local supports them |
 | [Reference tests](live-validation-ledger.md) | Dated tests on the reference thermostat |
 | [Version differences](version-differences.md) | What can and cannot be carried between firmware builds |
-| [Open questions](remaining-unknowns.md) | Unknowns, impact, and evidence needed to answer them |
 
 ## Firmware subsystems
 
 | Page | Subsystem |
 | --- | --- |
 | [Scheduling](scheduling-protocol.md) | V1/V2 schedules, holds, conflicts, and failure behavior |
-| [Persistence](persistence-schema.md) | Saved object graph, timing, and corruption behavior |
-| [Remote sensors](remote-sensors.md) | Sensor UI, pairing, and TI/NRF data paths |
-| [nRF firmware](nrf-firmware.md) | nRF52832 application image, UART protocol, sensors, and DFU update path |
-| [Screen lock](lock-protocol.md) | Local PIN state and server lock path |
-| [Equipment test](performance-test.md) | Performance-test state machine and relay risk |
-| [Installer and warranty APIs](installer-private-api.md) | Private onboarding and identity workflows |
-| [Messages and reset APIs](messages-reset-api.md) | Messages, alerts, identity, reset, and reporting |
-| [Application and recovery updates](application-update.md) | Application updater, recovery-file planner, and copy path |
-| [Boot and recovery](boot-update-recovery.md) | U-Boot update and factory-restore paths |
 
-## Research inventories
+## Private research
 
-| Page | Inventory |
-| --- | --- |
-| [Artifact inventory](artifact-inventory.md) | Private corpus metadata and hashes |
-| [UI action register](ui-action-register.md) | Every recognized QML event handler |
-| [Hardware and bus map](hardware-bus-map.md) | Components, buses, GPIOs, watchdogs, and electrical unknowns |
+Reverse-engineering methodology and tooling, artifact inventories, emulators, and
+security-sensitive firmware internals (boot and recovery, update channels, private
+vendor APIs, hardware bus map, open questions) are kept in a separate private
+repository and are not part of this documentation set.

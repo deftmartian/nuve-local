@@ -155,9 +155,7 @@ insufficient. Delivered-but-unconfirmed work must never be retried automatically
 
 ## Owners
 
-- [firmware-evidence.md](firmware-evidence.md) owns protocol and confirmation
-  semantics, the claim ledger, and requirement-to-code/test links.
-- [remaining-unknowns.md](remaining-unknowns.md) owns `LIVE-U01` and all unavailable
-  evidence.
+- The private research notes own protocol and confirmation semantics, the claim
+  ledger, requirement-to-code/test links, `LIVE-U01`, and all unavailable evidence.
 - This ledger records only the redacted point-in-time device observations and their
   boundary.

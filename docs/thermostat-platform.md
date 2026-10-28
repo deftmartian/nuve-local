@@ -33,7 +33,7 @@ proximity values similarly arrive as processed data from the nRF-side controller
 ```
 
 For bus details, chip markings, GPIOs, watchdogs, photographs, and open electrical
-questions, see [Hardware and bus map](hardware-bus-map.md).
+questions, see the private research notes.
 
 ## Recovered software stack
 
@@ -63,17 +63,15 @@ environment override alone is overwritten by the application.
 | `/dev/mmcblk1p3` | Update, application-data, and log storage |
 | `/dev/mmcblk1p4` | Factory `boot.gz` and `root.gz` recovery source |
 
-This is not an A/B update design. Application updates replace files in place, and
-the U-Boot recovery path writes boot and root from partition 4 without a recovered
-publisher-signature or automatic rollback boundary. The boot filesystem geometry
-also overlaps the beginning of root, so a boot-only restore is unsafe.
+This is not an A/B update design, and the update and recovery paths have no recovered
+publisher-signature or automatic rollback boundary. Details are kept in private
+research notes.
 
 The main application and recovery protocol are well mapped. The secondary-controller
 firmware, schematics, secure-boot policy, storage behavior during power loss, and
 vendor services are still open questions. See
-[Firmware architecture](firmware-architecture.md),
-[Boot, update, and recovery](boot-update-recovery.md), and
-[Remaining unknowns](remaining-unknowns.md) for the evidence boundary.
+[Firmware architecture](firmware-architecture.md) and the private research notes for
+the evidence boundary.
 
 ## What matters for deployment
 
@@ -81,9 +79,9 @@ vendor services are still open questions. See
 - The API base can include an explicit port. The existing `endpoint` key is used to
   set the operator-controlled hostname rather than patching the application.
 - The stock image exposes root SSH for maintenance. The deployment guide documents
-  the recovered default and safe handling.
+  safe handling.
 - Nuve Local does not update firmware, change installer wiring, operate recovery,
   or access the secondary controllers directly.
-- A factory-root replacement restores the stock account verifier, removes any added
+- A factory-root replacement restores the stock account state, removes any added
   SSH key, and regenerates host keys, so a changed fingerprint must be investigated
   rather than blindly accepted.

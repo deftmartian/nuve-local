@@ -12,8 +12,7 @@ controllers handle HVAC and sensor-side hardware over UART.
 The structural review covers all 1,955 first-party executable functions and 1,128
 recognized QV4 event handlers. That establishes coverage, not full semantic
 understanding of every helper. Counts and reproduction details are in
-[Function inventory](firmware-evidence.md#function-and-qv4-inventory) and
-[UI action register](ui-action-register.md).
+the private research notes.
 
 ## System model
 
@@ -51,12 +50,11 @@ HVAC terminals or raw room-sensor buses. It exchanges 9600-baud packet streams
 with a TI-side HVAC controller over `/dev/ttymxc3` and an NRF-side sensor
 controller over `/dev/ttymxc1`; GPIO21 and GPIO22 are receive-ready indications.
 Display, touch, backlight, eMMC, Wi-Fi, watchdog, enabled/disabled interfaces, and
-the GPIO direction defect are mapped in
-[hardware-bus-map.md](hardware-bus-map.md). Hash-bound photographs of the installed
+the GPIO direction defect are mapped in private research notes. Hash-bound photographs of the installed
 `HVAC021-C2-MAIN` additionally establish an nRF52832-QFAA, 4 GB
 `THGBMTG5D1LBAIL` eMMC, AP6256 radio module, PF0100 PMIC, NAU88C22 codec, and
 i.MX6/RAM markings. The nRF52832 application image is recovered from `appStherm`
-(see [nRF firmware](nrf-firmware.md)); TI firmware, the nRF bootloader, pad
+(documented in private research notes); TI firmware, the nRF bootloader, pad
 ownership, and board electrical behavior remain unknown.
 
 Normal API traffic uses verified TLS, but update and recovery paths lack publisher
@@ -226,7 +224,7 @@ starting.
 
 The complete application state machine, packet/persistence contract, UI gates,
 timer/sample behavior, terminal layout, and stage-specific logical relay effects
-are documented in [performance-test.md](performance-test.md). Nuve Local keeps both
+are documented in private research notes. Nuve Local keeps both
 performance-test endpoints unreachable.
 
 ## Fan behavior
@@ -399,36 +397,11 @@ The network stack separates low-level `nmcli` process control from the QML-facin
 `NetworkInterface`. The normal Qt/OpenSSL path performs peer and hostname
 verification; no application-level certificate-error bypass was recovered.
 
-Update selection is strategy-based (`UpdateManager`, `IUpdateStrategy`, legacy and
-client-specific strategies) and is independent of the HVAC state machine. The
-exact app path fetches metadata and payloads over HTTP with a stable MD5-of-serial
-query identifier. Its seven-key version validator is weakly typed; contractor
-exclusion/applicability gates selection. A downloaded archive is checked with MD5
-in memory and after a write/read cycle. This detects ordinary corruption but is not
-publisher authentication.
-
-Version keys sort newest-first numerically. Normal/factory modes hide staged rows;
-non-factory test mode admits them. Force selection uses exact contractor membership,
-ignores the scalar `ForceUpdate` member in this client-specific strategy, and returns
-the oldest qualifying forced row still newer than the installed version.
-
-Install preflight uses strict free-space comparisons and can delete log/test/update
-metadata files to make room. The helper then replaces `/usr/local/bin` content in
-place, ignores individual command failures, cleans the source unconditionally, and
-exits zero. There is no staging rename, backup, A/B slot, or rollback, and the
-helper's `Restart=on-failure` cannot retry a masked zero exit.
-
-The separate `RecoveryUpdater` stages manifest-named files under
-`/mnt/log/download/recovery` and uses in-place, source-removing rsync to p4
-`/mnt/recovery/`. Its p4 cache records `boot.gz` and `root.gz`, connecting this path
-boundary to U-Boot's later factory restore. Download-space shortage first removes
-the application-directory contents, then logs; failed downloads can immediately
-retry without a recovered budget, while a nonzero copy exit leaves the in-process
-latch set. It still does not directly write p1/p2. The high-level DNS/fetch queues,
-notification/manual/server selection, timer/retry gates, and restart latch are
-covered by an emulator; fault-injected filesystem and service outcomes remain open. Nuve
-Local exposes neither update nor recovery commands. See
-[application-update.md](application-update.md) (application and recovery updaters).
+Application and recovery updates are independent of the HVAC state machine. They are
+fetched over HTTP, checked only with MD5 (corruption detection, not publisher
+authentication), and installed in place without staging, backup, A/B slot, or rollback.
+Nuve Local exposes neither update nor recovery commands. Detailed strategy, ordering,
+and failure behavior is kept in private research notes.
 
 The endpoint inventory follows the same boundary. Ordinary sync, live telemetry,
 weather, and contractor display paths are implemented narrowly. Server-owned
@@ -437,7 +410,7 @@ Installation, address/customer, performance-test, private identity/message/alert
 forget, recovery, external-service, and warranty paths are not exposed. Recognizing
 an endpoint string is not enough to support its workflow. Their application-side
 persistence and retry contracts are documented in
-[messages-reset-api.md](messages-reset-api.md); being understood does not make them
+private research notes; being understood does not make them
 safe to expose.
 
 Monitor recovery is narrower than an HVAC command. Firmware always maps an
@@ -488,6 +461,6 @@ Open evidence gaps are intentionally narrow:
   application-internal fields; and
 - re-run the complete exact-hash review for every newly supported firmware build.
 
-See [firmware evidence](firmware-evidence.md) for the protocol-level proof and
+The protocol-level proof is kept in private research notes. See the
 [field matrix](field-matrix.md) for individual field ownership and confirmation
 rules.

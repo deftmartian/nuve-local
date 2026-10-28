@@ -2,9 +2,8 @@
 
 This review covers recovery `appStherm` SHA-256
 `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e`
-and the files in [Artifact inventory](artifact-inventory.md). Private keys,
-identifiers, endpoints, logs, customer data, and password verifiers are omitted. The
-stock maintenance login appears only in [Deployment and rollback](deployment.md).
+and the private artifact inventory. Private keys, identifiers, endpoints, logs,
+customer data, and password verifiers are omitted.
 
 ## Security result
 
@@ -21,7 +20,7 @@ Consequences:
   because MD5 supplies corruption detection, not publisher identity;
 - a LAN peer that reaches port 22 can attempt root authentication against the
   restored image's credential policy; and
-- physical/eMMC access exposes configuration, account verifier, logs, Wi-Fi state,
+- physical/eMMC access exposes configuration, account data, logs, Wi-Fi state,
   and application data because no storage encryption boundary was found.
 
 Nuve Local protects its own API listener. It does not patch the thermostat OS,
@@ -31,13 +30,10 @@ firewall, SSH, bootloader, updater, secondary controllers, or storage.
 
 | Boundary | What the firmware shows | What remains unknown |
 | --- | --- | --- |
-| Boot ROM to U-Boot | IVT layout and ROM-loaded U-Boot region; CSF pointer is zero | No authenticated-boot signature or secure chain into kernel/root |
-| U-Boot to Linux | Raw FAT `zImage`/DTB load and `gzwrite` restore of p1/p2 from p4 | No signature, signed manifest, A/B slot, transaction, or rollback |
+| Boot, update, and recovery chain | No end-to-end publisher signature on boot, application-update, or recovery content | Details are kept in private research notes |
 | Application API | Configured HTTPS base, Qt 6.4/OpenSSL, normal CA/hostname checks, per-call auth boolean, serial-bearing routes | Vendor-side authorization, token issuance/revocation, account isolation, or safe response semantics |
-| Application update | HTTP metadata/payload, serial-derived identifier, MD5 before and after write | Publisher authenticity, archive-member policy, atomic installation, or rollback |
-| Recovery-file update | HTTP download, manifest-selected files, attacker-selected MD5, in-place p4 copy | Publisher authenticity, pairwise atomicity, or safe later p1/p2 restore |
 | Local object persistence | JSON/QSettings/INI and filesystem access controls | File authenticity, encryption, transactional replacement, or corruption recovery |
-| TI/nRF52832 controllers | UART owners, photographed nRF52832 identity, packet boundaries, and application-side behavior | Secondary firmware integrity, electrical protections, or board-side authorization |
+| TI/nRF52832 controllers | UART owners, nRF52832 identity, packet boundaries, and application-side behavior | Secondary firmware integrity, electrical protections, or board-side authorization |
 | Nuve Local listener | Local source/Host/serial/route/method/token checks and normal TLS | Protection from a compromised Home Assistant host, thermostat root compromise, or another thermostat OS service |
 
 ## Stock API transport and authentication
@@ -99,80 +95,28 @@ Static analysis and the isolated route emulators establish recurring patterns:
 
 Knowledge of a route therefore never places it on the local allowlist.
 
-## Recovery-root network surface
+## Thermostat operating-system exposure
 
-The offline security inventory found the following state in the clean recovery root:
+The stock recovery image enables remote root administration over SSH with password
+authentication and ships no persistent packet-filter rules. Treat TCP 22 as a
+high-risk trusted-LAN maintenance surface: after setup, install an SSH key and
+restrict the port to explicit administration sources. Nuve Local does not depend on
+SSH during normal API operation and does not attempt to change this stock service.
 
-| Item | Exact recovery-image state | Security meaning |
-| --- | --- | --- |
-| SSH activation | `sshd.socket` is enabled, `ListenStream=22`, `Accept=yes`, and the per-connection service runs `sshd -i` | Port 22 is not scoped to a particular address by the unit |
-| Root login | `PermitRootLogin yes` | Root login is explicitly permitted |
-| Password auth | No explicit `PasswordAuthentication no`; the shipped configuration identifies enabled password auth as its default | Password authentication is not fail-closed in this image |
-| Empty passwords | `PermitEmptyPasswords yes`, but 0 of 27 preserved accounts has an empty verifier field | No preserved empty-password account was found; the permissive setting is still unsafe if one appears |
-| Account state | 26 accounts locked; root is the only account with a nonempty, nonlocked verifier | The stock root password is documented for device owners; the verifier itself is not reproduced |
-| Authorized keys | No root `authorized_keys` file in the pristine image | Factory image does not provide a key-only root boundary |
-| Host keys | No static host private/public keys in the pristine image | `sshdgenkeys` generates RSA, ECDSA, and ED25519 host keys on demand using temporary files, syncs, and renames |
-| Packet filter | Enabled `iptables.service` loads a zero-byte rules file with SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` | The supplied root contributes no persistent IPv4 allow/deny rules; live boot/runtime state could still differ |
-
-The systemd socket inventory also found `rpcbind.socket` listening only on
-`/var/run/rpcbind.sock` and `systemd-networkd.socket` listening on local route
-netlink. Neither unit declares a network TCP/UDP port. `ntpd.service` is separately
-enabled and launches `ntpd` without an interface restriction; its configuration
-has a local-clock source and bare `restrict default`. Whether it binds/responds on
-Wi-Fi in the live target remains unknown because it was not checked on the running
-thermostat.
-
-The recovery image contains the root verifier but no system-script path that
-regenerates it on first boot. `run-postinsts` has no retained password-changing
-script to execute. SSH host-key regeneration is handled separately. A U-Boot factory
-restore therefore reinstates the verifier found in this root image, while missing
-host keys are generated later. Other recovery versions and devices may differ and
-must be checked separately.
-
-The touchscreen application Factory Reset is not a root-filesystem restore. It
-clears application/registration/Wi-Fi/log state and reboots, so no recovered path
-shows it rotating the root verifier or replacing the SSH host keys. The application
-also contains a separate log-transfer SSH helper and embedded transfer
-authentication material. That is external disclosure machinery, not evidence of a
-local root-password rotation path.
-
-### Stock-OS disposition
-
-Port 22 should be treated as a high-risk trusted-LAN maintenance surface unless a
-read-only check of the running system shows otherwise. External
-segmentation should restrict it to an explicit administration source. Nuve Local
-does not depend on SSH during normal API operation and does not attempt to change
-this stock service.
-
-No password verifier, device-specific host key, private/public administration key,
-or transfer credential belongs in Git, diagnostics, command arguments, or a support
-report. The known stock password appears only as deployment/security documentation;
-it must never be interpreted as a device-unique secret or proof of cross-version
-reuse. No further password testing is required for Nuve Local operation.
+Application Factory Reset is not a root-filesystem restore, and no recovered path
+shows it rotating the root credential or SSH host keys. No credential, device-specific
+host key, administration key, or transfer secret belongs in Git, diagnostics, command
+arguments, or a support report. Credential-level analysis and the exact image state
+are kept in private research notes.
 
 ## Software authenticity and rollback
 
-Three independent paths fail the publisher-authenticity requirement:
-
-1. **Application ZIP.** Metadata and archive are fetched over HTTP. The expected
-   checksum is supplied by the same untrusted metadata path. MD5 is checked in
-   memory and after write, then a shell helper overwrites `/usr/local/bin` in place.
-2. **Recovery files.** Manifest-selected files are fetched over HTTP and validated
-   with manifest-supplied MD5 before in-place, source-removing copy into p4.
-3. **Boot restore.** U-Boot checks only that `boot.gz` and `root.gz` can be loaded,
-   then writes boot before root. The IVT CSF pointer is zero and no signed kernel,
-   DTB, root, or recovery manifest gate was found.
-
-The hardware RNG/DCP nodes and enabled `rngd.service` do not change this result;
-availability of cryptographic hardware is not evidence that these flows use a
-publisher signature. There is no A/B slot, transactional commit, verified rollback,
-or safe power-loss guarantee in the recovered chain. Nuve Local does not expose
-update, recovery, or reset commands.
-
-See [application-update.md](application-update.md) (application and recovery
-updaters) and
-[boot-update-recovery.md](boot-update-recovery.md) for ordering and failure
-states.
+Application updates, recovery-file updates, and boot-time factory restore carry no
+publisher signature, and the recovered chain has no A/B slot, transactional commit, or
+verified rollback. A hostile update or recovery source could therefore replace
+executable or boot/root content. Nuve Local does not expose update, recovery, or
+reset commands. Step-level ordering and failure states are kept in private research
+notes.
 
 ## Private data and disclosure paths
 
@@ -268,33 +212,12 @@ Never commit firmware images, extracted binaries, raw decompiles, password
 verifiers, SSH material, device tokens, serials, Wi-Fi profiles, raw traffic,
 customer data, or journals.
 
-## Reproduction
-
-After verifying and mounting a private decompressed root read-only, run:
-
-```bash
-.venv/bin/python scripts/inventory_recovery_security.py \
-  <read-only-recovery-root-mount>
-```
-
-The tool reads only fixed SSH/systemd/iptables/account files. It emits explicit
-SSHD directives, enabled socket/unit metadata, rule-file metadata, aggregate
-credential-state counts, and the conventional root account's state class. It never
-emits a verifier, arbitrary account name, key, authorized-key content, or embedded
-credential. Unit fixtures assert that representative secret values cannot appear
-in its JSON output.
-
 ## Residual security unknowns
 
-| ID | Unresolved fact | Consequence | Evidence required |
-| --- | --- | --- | --- |
-| SEC-U01 | Live listening sockets, iptables/ip6tables state, SSH directives, root/key state, and drift from the clean recovery image | LAN exposure can differ from the static root | Approved local-console, read-only checks of `ss`, firewall, units, and credential classes |
-| SEC-U02 | Vendor API token issuance, storage, rotation, revocation, scope, server authorization, audit, rate limits, retention, and tenancy checks | Authenticated flag and token length cannot prove backend security | Vendor design/source or isolated service account under separate approval |
-| SEC-U03 | Whether other recovery builds and devices reuse the recovered 1.5.8 root credential | One recovery image and one owned reference unit say nothing about fleet-wide reuse | Redacted per-image comparison or vendor provisioning information; never publish verifier material |
-| SEC-U04 | `ntpd`, resolver LLMNR/mDNS, rpcbind activation, and other daemon live binding/response behavior | Additional LAN surfaces may exist outside socket-unit declarations | Cloned target boot with packet/socket observation, or separate approved read-only live check |
-| SEC-U05 | At-rest protection and secure deletion on the photographed `THGBMTG5D1LBAIL` eMMC | Raw storage may retain configuration, logs, profiles, and deleted data | EXT_CSD/configuration and power-rail evidence plus cloned-media forensic tests |
-| SEC-U06 | Secondary-controller boot/update/authentication and debug interfaces | TI/nRF52832 compromise could bypass Linux-side policy | Exact secondary firmware, schematic/BOM, and isolated donor-board analysis |
-
-These questions are not a reason to probe unrelated devices, test more passwords,
-intercept updates, contact vendor services, or change a running thermostat. Each row
-states what would be needed to answer it.
+The following remain unverified: live listening sockets and firewall state on the
+running thermostat, vendor API token lifecycle and server-side authorization,
+whether other firmware builds reuse the same stock credential, other daemons'
+live LAN binding, at-rest protection on the eMMC, and secondary-controller
+boot/update authentication. They are not a reason to probe unrelated devices, test
+more passwords, intercept updates, contact vendor services, or change a running
+thermostat. Detailed evidence requirements are kept in private research notes.
