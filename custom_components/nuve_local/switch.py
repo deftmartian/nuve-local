@@ -36,9 +36,7 @@ class _NuveSettingsSwitch(NuveEntity, SwitchEntity):
 
     @property
     def is_on(self) -> bool | None:
-        snapshot = self._runtime.settings_snapshot
-        settings = snapshot.get("settings") if snapshot is not None else None
-        value = settings.get(self._settings_key) if isinstance(settings, dict) else None
+        value = self._runtime.setting("settings", self._settings_key)
         return value if isinstance(value, bool) else None
 
     @property

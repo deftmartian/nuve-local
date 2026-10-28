@@ -57,9 +57,7 @@ class NuveBrightnessMode(NuveEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        snapshot = self._runtime.settings_snapshot
-        settings = snapshot.get("settings") if snapshot is not None else None
-        value = settings.get("brightness_mode") if isinstance(settings, dict) else None
+        value = self._runtime.setting("settings", "brightness_mode")
         return BRIGHTNESS_MODES[value] if isinstance(value, int) and value in (0, 1) else None
 
     @property
@@ -92,9 +90,7 @@ class NuveBacklightShade(NuveEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        snapshot = self._runtime.settings_snapshot
-        backlight = snapshot.get("backlight") if snapshot is not None else None
-        value = backlight.get("shadeIndex") if isinstance(backlight, dict) else None
+        value = self._runtime.setting("backlight", "shadeIndex")
         return BACKLIGHT_SHADES[value] if isinstance(value, int) and 0 <= value <= 5 else None
 
     @property
@@ -121,9 +117,7 @@ class _NuveBinarySettingsSelect(NuveEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
-        snapshot = self._runtime.settings_snapshot
-        settings = snapshot.get("settings") if snapshot is not None else None
-        value = settings.get(self._settings_key) if isinstance(settings, dict) else None
+        value = self._runtime.setting("settings", self._settings_key)
         return self.options[value] if isinstance(value, int) and value in (0, 1) else None
 
     @property

@@ -100,9 +100,7 @@ class NuveDisplayBrightness(NuveEntity, NumberEntity):
 
     @property
     def native_value(self) -> int | None:
-        snapshot = self._runtime.settings_snapshot
-        settings = snapshot.get("settings") if snapshot is not None else None
-        value = settings.get("brightness") if isinstance(settings, dict) else None
+        value = self._runtime.setting("settings", "brightness")
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
     @property

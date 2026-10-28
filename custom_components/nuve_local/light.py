@@ -46,9 +46,7 @@ class NuveDisplayBacklight(NuveEntity, LightEntity):
 
     @property
     def _backlight(self) -> dict[str, Any] | None:
-        snapshot = self._runtime.settings_snapshot
-        value = snapshot.get("backlight") if snapshot is not None else None
-        return value if isinstance(value, dict) else None
+        return self._runtime.settings_section("backlight")
 
     @property
     def available(self) -> bool:

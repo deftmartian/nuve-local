@@ -233,16 +233,25 @@ class NuveRuntime:
 
         return self.auto_mode_snapshot is not None and self.auto_mode_revision is not None
 
+    def settings_section(self, section: str) -> dict[str, Any] | None:
+        """Return one object section of the device-originated settings baseline."""
+
+        if self.settings_snapshot is None:
+            return None
+        value = self.settings_snapshot.get(section)
+        return value if isinstance(value, dict) else None
+
+    def setting(self, section: str, key: str) -> Any:
+        """Return one raw value from a settings section, or None when absent."""
+
+        values = self.settings_section(section)
+        return values.get(key) if values is not None else None
+
     @property
     def baseline_firmware_version(self) -> str | None:
         """Return the firmware version reported inside the full device upload."""
 
-        if self.settings_snapshot is None:
-            return None
-        firmware = self.settings_snapshot.get("firmware")
-        if not isinstance(firmware, dict):
-            return None
-        version = firmware.get("firmware-version")
+        version = self.setting("firmware", "firmware-version")
         return version if isinstance(version, str) else None
 
     @property
@@ -502,16 +511,14 @@ class NuveRuntime:
     def fan_mode(self) -> int | None:
         """Return the configured FanMode enum from the saved device state."""
 
-        fan = self.settings_snapshot.get("fan") if self.settings_snapshot is not None else None
-        value = fan.get("mode") if isinstance(fan, dict) else None
+        value = self.setting("fan", "mode")
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
     @property
     def fan_working_per_hour(self) -> int | None:
         """Return configured circulation minutes per hour."""
 
-        fan = self.settings_snapshot.get("fan") if self.settings_snapshot is not None else None
-        value = fan.get("workingPerHour") if isinstance(fan, dict) else None
+        value = self.setting("fan", "workingPerHour")
         return value if isinstance(value, int) and not isinstance(value, bool) else None
 
     def async_set_paired(self) -> None:
@@ -2130,8 +2137,7 @@ class NuveRuntime:
 
         assert self.settings_snapshot is not None
         assert self.auto_mode_snapshot is not None
-        system = self.settings_snapshot.get("system")
-        expected_system_type = system.get("type") if isinstance(system, dict) else None
+        expected_system_type = self.setting("system", "type")
         state_system_type = self.state.system_type
         actual_system_type = (
             SYSTEM_TYPE_NAMES.get(state_system_type) if state_system_type is not None else None

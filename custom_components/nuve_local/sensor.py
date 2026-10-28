@@ -93,37 +93,25 @@ class NuveRuntimeSensorEntityDescription(SensorEntityDescription):
 def _system_value(runtime: NuveRuntime, key: str) -> bool | float | int | str | None:
     """Return one already protocol-validated, non-private system value."""
 
-    system = (
-        runtime.settings_snapshot.get("system") if runtime.settings_snapshot is not None else None
-    )
-    value = system.get(key) if isinstance(system, dict) else None
+    value = runtime.setting("system", key)
     return value if isinstance(value, bool | float | int | str) else None
 
 
 def _accessory_value(runtime: NuveRuntime, key: str) -> int | str | None:
     """Return one exact member of the validated accessory configuration."""
 
-    system = (
-        runtime.settings_snapshot.get("system") if runtime.settings_snapshot is not None else None
-    )
-    accessories = system.get("systemAccessories") if isinstance(system, dict) else None
+    accessories = runtime.setting("system", "systemAccessories")
     value = accessories.get(key) if isinstance(accessories, dict) else None
     return value if isinstance(value, int | str) and not isinstance(value, bool) else None
 
 
 def _firmware_version(runtime: NuveRuntime) -> str | None:
-    firmware = (
-        runtime.settings_snapshot.get("firmware") if runtime.settings_snapshot is not None else None
-    )
-    value = firmware.get("firmware-version") if isinstance(firmware, dict) else None
+    value = runtime.setting("firmware", "firmware-version")
     return value if isinstance(value, str) and value else None
 
 
 def _wifi_strength(runtime: NuveRuntime) -> str | None:
-    system = (
-        runtime.settings_snapshot.get("system") if runtime.settings_snapshot is not None else None
-    )
-    value = system.get("wifiStrength") if isinstance(system, dict) else None
+    value = runtime.setting("system", "wifiStrength")
     return value if isinstance(value, str) and value else None
 
 

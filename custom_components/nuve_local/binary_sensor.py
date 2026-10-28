@@ -38,10 +38,7 @@ class NuveRuntimeBinarySensorDescription(BinarySensorEntityDescription):
 def _system_bool(runtime: NuveRuntime, key: str) -> bool | None:
     """Return one already protocol-validated installer boolean."""
 
-    system = (
-        runtime.settings_snapshot.get("system") if runtime.settings_snapshot is not None else None
-    )
-    value = system.get(key) if isinstance(system, dict) else None
+    value = runtime.setting("system", key)
     return value if isinstance(value, bool) else None
 
 

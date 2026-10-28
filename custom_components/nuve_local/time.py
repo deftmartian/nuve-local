@@ -42,9 +42,7 @@ class NuveNightModeTime(NuveEntity, TimeEntity):
 
     @property
     def native_value(self) -> time | None:
-        snapshot = self._runtime.settings_snapshot
-        settings = snapshot.get("settings") if snapshot is not None else None
-        value = settings.get(self._settings_key) if isinstance(settings, dict) else None
+        value = self._runtime.setting("settings", self._settings_key)
         return time.fromisoformat(value) if isinstance(value, str) else None
 
     @property
