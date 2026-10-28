@@ -7,11 +7,15 @@ from homeassistant.const import EntityCategory
 from custom_components.nuve_local.binary_sensor import (
     BINARY_SENSORS,
     RUNTIME_BINARY_SENSORS,
-    NuveRuntimeBinarySensor,
+    NuveBinarySensor,
 )
 from custom_components.nuve_local.models import NuveState
 from custom_components.nuve_local.runtime import NuveRuntime
 from tests.helpers import SYSTEM_BINARY_SENSOR_FIELDS
+
+
+def _runtime(state: NuveState) -> NuveRuntime:
+    return NuveRuntime(serial="00-000-000000", state=state)
 
 
 def test_binary_sensor_values_are_not_inferred() -> None:
@@ -20,15 +24,15 @@ def test_binary_sensor_values_are_not_inferred() -> None:
     led = next(item for item in BINARY_SENSORS if item.key == "status_led_active")
     online = next(item for item in BINARY_SENSORS if item.key == "reported_online")
 
-    assert fan.value_fn(NuveState(fan_active=True)) is True
-    assert fan.value_fn(NuveState()) is None
-    assert hold.value_fn(NuveState(schedule_type=8)) is True
-    assert hold.value_fn(NuveState(schedule_type=2)) is False
-    assert hold.value_fn(NuveState()) is None
-    assert led.value_fn(NuveState(led_active=True)) is True
-    assert led.value_fn(NuveState()) is None
-    assert online.value_fn(NuveState(online=False)) is False
-    assert online.value_fn(NuveState()) is None
+    assert fan.value_fn(_runtime(NuveState(fan_active=True))) is True
+    assert fan.value_fn(_runtime(NuveState())) is None
+    assert hold.value_fn(_runtime(NuveState(schedule_type=8))) is True
+    assert hold.value_fn(_runtime(NuveState(schedule_type=2))) is False
+    assert hold.value_fn(_runtime(NuveState())) is None
+    assert led.value_fn(_runtime(NuveState(led_active=True))) is True
+    assert led.value_fn(_runtime(NuveState())) is None
+    assert online.value_fn(_runtime(NuveState(online=False))) is False
+    assert online.value_fn(_runtime(NuveState())) is None
 
 
 def test_runtime_health_entities_report_fail_closed_state() -> None:
@@ -40,7 +44,7 @@ def test_runtime_health_entities_report_fail_closed_state() -> None:
     assert descriptions["persistence_healthy"].value_fn(runtime) is True
     assert descriptions["uncertain_outcome"].value_fn(runtime) is False
 
-    entity = NuveRuntimeBinarySensor(runtime, descriptions["control_ready"])
+    entity = NuveBinarySensor(runtime, descriptions["control_ready"])
     assert entity.extra_state_attributes == {"reason": "not_paired"}
 
 
@@ -72,4 +76,4 @@ def test_installer_booleans_are_disabled_read_only_diagnostics() -> None:
         }:
             assert description.entity_registry_enabled_default is False
             assert description.entity_category == EntityCategory.DIAGNOSTIC
-            assert description.always_available is False
+            assert description.availability == "value"

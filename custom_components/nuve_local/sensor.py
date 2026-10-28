@@ -24,7 +24,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .data import NuveConfigEntry
 from .entity import NuveEntity
-from .models import NuveState, NuveSystemType
+from .models import NuveSystemType
 from .runtime import NuveRuntime
 
 AIR_QUALITY_OPTIONS = ("none", "level_0", "level_1", "level_2")
@@ -46,48 +46,47 @@ SCHEDULE_TYPE_OPTIONS = {
 }
 
 
-def _air_quality_value(state: NuveState) -> str | None:
+def _air_quality_value(runtime: NuveRuntime) -> str | None:
     """Return the firmware's category without guessing its direction."""
 
-    if state.air_quality_level is None:
+    level = runtime.state.air_quality_level
+    if level is None:
         return None
     try:
-        return AIR_QUALITY_OPTIONS[state.air_quality_level]
+        return AIR_QUALITY_OPTIONS[level]
     except IndexError:
         return None
 
 
-def _system_type_value(state: NuveState) -> str | None:
+def _system_type_value(runtime: NuveRuntime) -> str | None:
     """Return the firmware's exact equipment category."""
 
-    if state.system_type is None:
+    system_type = runtime.state.system_type
+    if system_type is None:
         return None
     try:
-        return SYSTEM_TYPE_OPTIONS[NuveSystemType(state.system_type)]
+        return SYSTEM_TYPE_OPTIONS[NuveSystemType(system_type)]
     except IndexError, ValueError:
         return None
 
 
-def _schedule_type_value(state: NuveState) -> str | None:
+def _schedule_type_value(runtime: NuveRuntime) -> str | None:
     """Return the exact schedule category declared by the protobuf."""
 
-    if state.schedule_type is None:
+    schedule_type = runtime.state.schedule_type
+    if schedule_type is None:
         return None
-    return SCHEDULE_TYPE_OPTIONS.get(state.schedule_type)
+    return SCHEDULE_TYPE_OPTIONS.get(schedule_type)
 
 
 @dataclass(frozen=True, kw_only=True)
 class NuveSensorEntityDescription(SensorEntityDescription):
-    """Describe a Nuve telemetry sensor."""
+    """Describe one value read from the runtime."""
 
-    value_fn: Callable[[NuveState], float | datetime | str | None]
-
-
-@dataclass(frozen=True, kw_only=True)
-class NuveRuntimeSensorEntityDescription(SensorEntityDescription):
-    """Describe one canonical settings diagnostic."""
-
-    value_fn: Callable[[NuveRuntime], bool | float | int | str | None]
+    value_fn: Callable[[NuveRuntime], bool | float | int | str | datetime | None]
+    # Pushed telemetry is available while the thermostat is live; canonical
+    # settings diagnostics are available once their value is known.
+    telemetry: bool = False
 
 
 def _system_value(runtime: NuveRuntime, key: str) -> bool | float | int | str | None:
@@ -123,10 +122,10 @@ def _system_sensor(
     device_class: SensorDeviceClass | None = None,
     unit: str | None = None,
     precision: int | None = None,
-) -> NuveRuntimeSensorEntityDescription:
+) -> NuveSensorEntityDescription:
     """Describe one disabled, read-only installer diagnostic."""
 
-    return NuveRuntimeSensorEntityDescription(
+    return NuveSensorEntityDescription(
         key=key,
         translation_key=translation_key,
         device_class=device_class,
@@ -140,24 +139,27 @@ def _system_sensor(
 
 SENSORS: tuple[NuveSensorEntityDescription, ...] = (
     NuveSensorEntityDescription(
+        telemetry=True,
         key="current_temperature",
         translation_key="current_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda state: state.current_temperature,
+        value_fn=lambda runtime: runtime.state.current_temperature,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="current_humidity",
         translation_key="current_humidity",
         device_class=SensorDeviceClass.HUMIDITY,
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda state: state.current_humidity,
+        value_fn=lambda runtime: runtime.state.current_humidity,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="air_quality_level",
         translation_key="air_quality_level",
         device_class=SensorDeviceClass.ENUM,
@@ -165,33 +167,37 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         value_fn=_air_quality_value,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="air_pressure",
         translation_key="air_pressure",
         device_class=SensorDeviceClass.ATMOSPHERIC_PRESSURE,
         native_unit_of_measurement=UnitOfPressure.HPA,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda state: state.air_pressure,
+        value_fn=lambda runtime: runtime.state.air_pressure,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="target_temperature",
         translation_key="target_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
         native_unit_of_measurement=UnitOfTemperature.CELSIUS,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=1,
-        value_fn=lambda state: state.target_temperature,
+        value_fn=lambda runtime: runtime.state.target_temperature,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="target_humidity",
         translation_key="target_humidity",
         device_class=SensorDeviceClass.HUMIDITY,
         native_unit_of_measurement=PERCENTAGE,
         state_class=SensorStateClass.MEASUREMENT,
         suggested_display_precision=0,
-        value_fn=lambda state: state.target_humidity,
+        value_fn=lambda runtime: runtime.state.target_humidity,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="auto_temperature_low",
         translation_key="auto_temperature_low",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -199,9 +205,10 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=1,
-        value_fn=lambda state: state.auto_temperature_low,
+        value_fn=lambda runtime: runtime.state.auto_temperature_low,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="auto_temperature_high",
         translation_key="auto_temperature_high",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -209,29 +216,33 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         state_class=SensorStateClass.MEASUREMENT,
         entity_registry_enabled_default=False,
         suggested_display_precision=1,
-        value_fn=lambda state: state.auto_temperature_high,
+        value_fn=lambda runtime: runtime.state.auto_temperature_high,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="last_seen",
         translation_key="last_seen",
         device_class=SensorDeviceClass.TIMESTAMP,
-        value_fn=lambda state: state.last_seen,
+        value_fn=lambda runtime: runtime.state.last_seen,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="cooling_stage",
         translation_key="cooling_stage",
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda state: state.cooling_stage,
+        value_fn=lambda runtime: runtime.state.cooling_stage,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="heating_stage",
         translation_key="heating_stage",
         entity_category=EntityCategory.DIAGNOSTIC,
         suggested_display_precision=0,
-        value_fn=lambda state: state.heating_stage,
+        value_fn=lambda runtime: runtime.state.heating_stage,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="system_type",
         translation_key="system_type",
         device_class=SensorDeviceClass.ENUM,
@@ -241,6 +252,7 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         value_fn=_system_type_value,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="schedule_type",
         translation_key="schedule_type",
         device_class=SensorDeviceClass.ENUM,
@@ -248,6 +260,7 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         value_fn=_schedule_type_value,
     ),
     NuveSensorEntityDescription(
+        telemetry=True,
         key="mcu_temperature",
         translation_key="mcu_temperature",
         device_class=SensorDeviceClass.TEMPERATURE,
@@ -256,26 +269,26 @@ SENSORS: tuple[NuveSensorEntityDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         suggested_display_precision=1,
-        value_fn=lambda state: state.mcu_temperature,
+        value_fn=lambda runtime: runtime.state.mcu_temperature,
     ),
 )
 
-RUNTIME_SENSORS: tuple[NuveRuntimeSensorEntityDescription, ...] = (
-    NuveRuntimeSensorEntityDescription(
+RUNTIME_SENSORS: tuple[NuveSensorEntityDescription, ...] = (
+    NuveSensorEntityDescription(
         key="firmware_version",
         translation_key="firmware_version",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=_firmware_version,
     ),
-    NuveRuntimeSensorEntityDescription(
+    NuveSensorEntityDescription(
         key="wifi_strength",
         translation_key="wifi_strength",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         value_fn=_wifi_strength,
     ),
-    NuveRuntimeSensorEntityDescription(
+    NuveSensorEntityDescription(
         key="configured_equipment_type",
         translation_key="configured_equipment_type",
         device_class=SensorDeviceClass.ENUM,
@@ -386,7 +399,7 @@ RUNTIME_SENSORS: tuple[NuveRuntimeSensorEntityDescription, ...] = (
         unit=UnitOfTime.MINUTES,
         precision=1,
     ),
-    NuveRuntimeSensorEntityDescription(
+    NuveSensorEntityDescription(
         key="accessory_wire",
         translation_key="accessory_wire",
         device_class=SensorDeviceClass.ENUM,
@@ -395,7 +408,7 @@ RUNTIME_SENSORS: tuple[NuveRuntimeSensorEntityDescription, ...] = (
         entity_registry_enabled_default=False,
         value_fn=lambda runtime: _accessory_value(runtime, "wire"),
     ),
-    NuveRuntimeSensorEntityDescription(
+    NuveSensorEntityDescription(
         key="accessory_mode_code",
         translation_key="accessory_mode_code",
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -456,14 +469,13 @@ async def async_setup_entry(
     runtime = entry.runtime_data.runtime
     async_add_entities(
         [
-            *(NuveSensor(runtime, description) for description in SENSORS),
-            *(NuveRuntimeSensor(runtime, description) for description in RUNTIME_SENSORS),
+            *(NuveSensor(runtime, description) for description in (*SENSORS, *RUNTIME_SENSORS)),
         ]
     )
 
 
 class NuveSensor(NuveEntity, SensorEntity):
-    """A sensor backed by the latest pushed monitor record."""
+    """A sensor backed by pushed telemetry or a validated canonical settings field."""
 
     entity_description: NuveSensorEntityDescription
 
@@ -473,28 +485,11 @@ class NuveSensor(NuveEntity, SensorEntity):
         self._attr_unique_id = f"{runtime.serial}_{description.key}"
 
     @property
-    def native_value(self) -> float | datetime | str | None:
-        return self.entity_description.value_fn(self._runtime.state)
-
-
-class NuveRuntimeSensor(NuveEntity, SensorEntity):
-    """A sensor backed by a validated canonical settings field."""
-
-    entity_description: NuveRuntimeSensorEntityDescription
-
-    def __init__(
-        self,
-        runtime: NuveRuntime,
-        description: NuveRuntimeSensorEntityDescription,
-    ) -> None:
-        super().__init__(runtime)
-        self.entity_description = description
-        self._attr_unique_id = f"{runtime.serial}_{description.key}"
-
-    @property
     def available(self) -> bool:
+        if self.entity_description.telemetry:
+            return super().available
         return self.native_value is not None
 
     @property
-    def native_value(self) -> bool | float | int | str | None:
+    def native_value(self) -> bool | float | int | str | datetime | None:
         return self.entity_description.value_fn(self._runtime)

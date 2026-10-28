@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Literal
 
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,  # pyright: ignore[reportPrivateImportUsage]
@@ -16,23 +17,22 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .data import NuveConfigEntry
 from .entity import NuveEntity
-from .models import NuveState
 from .runtime import NuveRuntime
 
 
 @dataclass(frozen=True, kw_only=True)
 class NuveBinarySensorDescription(BinarySensorEntityDescription):
-    """Describe one confirmed binary telemetry value."""
-
-    value_fn: Callable[[NuveState], bool | None]
-
-
-@dataclass(frozen=True, kw_only=True)
-class NuveRuntimeBinarySensorDescription(BinarySensorEntityDescription):
-    """Describe one integration safety or source-health condition."""
+    """Describe one binary value read from the runtime."""
 
     value_fn: Callable[[NuveRuntime], bool | None]
-    always_available: bool = False
+    # "device": available while the thermostat is live (pushed telemetry);
+    # "value": available once the value is known; "always": health conditions.
+    availability: Literal["device", "value", "always"] = "value"
+
+
+def _hold_active(runtime: NuveRuntime) -> bool | None:
+    schedule_type = runtime.state.schedule_type
+    return None if schedule_type is None else schedule_type == 8
 
 
 def _system_bool(runtime: NuveRuntime, key: str) -> bool | None:
@@ -44,10 +44,10 @@ def _system_bool(runtime: NuveRuntime, key: str) -> bool | None:
 
 def _system_binary_sensor(
     *, key: str, translation_key: str, system_key: str
-) -> NuveRuntimeBinarySensorDescription:
+) -> NuveBinarySensorDescription:
     """Describe one disabled, read-only installer boolean."""
 
-    return NuveRuntimeBinarySensorDescription(
+    return NuveBinarySensorDescription(
         key=key,
         translation_key=translation_key,
         entity_category=EntityCategory.DIAGNOSTIC,
@@ -58,94 +58,100 @@ def _system_binary_sensor(
 
 BINARY_SENSORS: tuple[NuveBinarySensorDescription, ...] = (
     NuveBinarySensorDescription(
+        availability="device",
         key="fan_active",
         translation_key="fan_active",
         device_class=BinarySensorDeviceClass.RUNNING,
-        value_fn=lambda state: state.fan_active,
+        value_fn=lambda runtime: runtime.state.fan_active,
     ),
     NuveBinarySensorDescription(
+        availability="device",
         key="hold_active",
         translation_key="hold_active",
-        value_fn=lambda state: None if state.schedule_type is None else state.schedule_type == 8,
+        value_fn=lambda runtime: (
+            None if runtime.state.schedule_type is None else runtime.state.schedule_type == 8
+        ),
     ),
     NuveBinarySensorDescription(
+        availability="device",
         key="status_led_active",
         translation_key="status_led_active",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        value_fn=lambda state: state.led_active,
+        value_fn=lambda runtime: runtime.state.led_active,
     ),
     NuveBinarySensorDescription(
+        availability="device",
         key="reported_online",
         translation_key="reported_online",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         entity_category=EntityCategory.DIAGNOSTIC,
-        value_fn=lambda state: state.online,
+        value_fn=lambda runtime: runtime.state.online,
     ),
 )
 
-RUNTIME_BINARY_SENSORS: tuple[NuveRuntimeBinarySensorDescription, ...] = (
-    NuveRuntimeBinarySensorDescription(
+RUNTIME_BINARY_SENSORS: tuple[NuveBinarySensorDescription, ...] = (
+    NuveBinarySensorDescription(
         key="control_ready",
         translation_key="control_ready",
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.control_ready,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="canonical_sync_ready",
         translation_key="canonical_sync_ready",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.canonical_live_consistency_ready,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="monitor_fresh",
         translation_key="monitor_fresh",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.monitor_is_fresh,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="persistence_healthy",
         translation_key="persistence_healthy",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.persistence_healthy,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="outdoor_temperature_fresh",
         translation_key="outdoor_temperature_fresh",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.outdoor_is_fresh,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="forecast_healthy",
         translation_key="forecast_healthy",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.forecast_healthy,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="uncertain_outcome",
         translation_key="uncertain_outcome",
         device_class=BinarySensorDeviceClass.PROBLEM,
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.uncertain_outcome,
     ),
-    NuveRuntimeBinarySensorDescription(
+    NuveBinarySensorDescription(
         key="contractor_info_ready",
         translation_key="contractor_info_ready",
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
-        always_available=True,
+        availability="always",
         value_fn=lambda runtime: runtime.contractor_info_ready,
     ),
     _system_binary_sensor(
@@ -221,51 +227,33 @@ async def async_setup_entry(
     runtime = entry.runtime_data.runtime
     async_add_entities(
         [
-            *(NuveBinarySensor(runtime, description) for description in BINARY_SENSORS),
             *(
-                NuveRuntimeBinarySensor(runtime, description)
-                for description in RUNTIME_BINARY_SENSORS
+                NuveBinarySensor(runtime, description)
+                for description in (*BINARY_SENSORS, *RUNTIME_BINARY_SENSORS)
             ),
         ]
     )
 
 
 class NuveBinarySensor(NuveEntity, BinarySensorEntity):
-    """A binary sensor backed by the latest pushed monitor record."""
+    """A binary sensor backed by pushed telemetry or Nuve Local runtime state."""
 
     entity_description: NuveBinarySensorDescription
 
-    def __init__(
-        self,
-        runtime: NuveRuntime,
-        description: NuveBinarySensorDescription,
-    ) -> None:
-        super().__init__(runtime)
-        self.entity_description = description
-        self._attr_unique_id = f"{runtime.serial}_{description.key}"
-
-    @property
-    def is_on(self) -> bool | None:
-        return self.entity_description.value_fn(self._runtime.state)
-
-
-class NuveRuntimeBinarySensor(NuveEntity, BinarySensorEntity):
-    """A binary sensor backed by Nuve Local runtime safety state."""
-
-    entity_description: NuveRuntimeBinarySensorDescription
-
-    def __init__(
-        self,
-        runtime: NuveRuntime,
-        description: NuveRuntimeBinarySensorDescription,
-    ) -> None:
+    def __init__(self, runtime: NuveRuntime, description: NuveBinarySensorDescription) -> None:
         super().__init__(runtime)
         self.entity_description = description
         self._attr_unique_id = f"{runtime.serial}_{description.key}"
 
     @property
     def available(self) -> bool:
-        return self.entity_description.always_available or self.is_on is not None
+        match self.entity_description.availability:
+            case "device":
+                return super().available
+            case "always":
+                return True
+            case _:
+                return self.is_on is not None
 
     @property
     def is_on(self) -> bool | None:
