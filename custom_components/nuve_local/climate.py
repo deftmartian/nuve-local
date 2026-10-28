@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .commands import validated_command_celsius
 from .const import (
     DOMAIN,
     MAX_AUTO_TEMPERATURE,
@@ -31,7 +32,7 @@ from .const import (
 )
 from .entity import NuveEntity
 from .models import NuveMode
-from .runtime import NuveRuntime, validated_command_celsius
+from .runtime import NuveRuntime
 
 NUVE_TO_HA_MODE: dict[NuveMode, HVACMode] = {
     NuveMode.COOL: HVACMode.COOL,

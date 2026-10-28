@@ -1750,7 +1750,7 @@ def test_first_strictly_post_delivery_monitor_can_confirm_command() -> None:
         pending = runtime._queue_command_locked(
             "settings",
             {"temp": 20.0},
-            runtime._settings_payload(runtime.settings_snapshot, {"temp": 20.0}),
+            runtime._command_payload(runtime.settings_snapshot, {"temp": 20.0}),
         )
         pending.delivered = True
         pending.delivered_at = delivered_at

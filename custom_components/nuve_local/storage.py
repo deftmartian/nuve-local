@@ -15,17 +15,12 @@ from typing import TYPE_CHECKING, Any, TypedDict
 
 from homeassistant.helpers.storage import Store
 
+from .commands import valid_backlight, valid_device_settings, valid_fan, valid_mode_id
 from .const import (
-    BACKLIGHT_KEYS,
     DOMAIN,
-    FAN_MODE_IDS,
-    MAX_FAN_WORKING_PER_HOUR,
-    MIN_FAN_WORKING_PER_HOUR,
 )
 from .protocol import (
-    DEVICE_SETTINGS_KEYS,
     NuveProtocolError,
-    normalize_night_mode_time,
     parse_auto_mode_baseline,
     parse_revision,
     parse_settings_upload,
@@ -466,7 +461,7 @@ def _validate_uncertain_desired(kind: str, desired: dict[str, Any]) -> None:
         raise NuveProtocolError("uncertain command contains unsupported fields")
     for key, value in desired.items():
         if key == "mode_id":
-            if isinstance(value, bool) or not isinstance(value, int) or value not in (1, 2, 3, 5):
+            if not valid_mode_id(value):
                 raise NuveProtocolError("uncertain mode is invalid")
             continue
         if (
@@ -481,83 +476,21 @@ def _validate_uncertain_desired(kind: str, desired: dict[str, Any]) -> None:
 def _validate_uncertain_backlight_desired(value: Any) -> None:
     """Validate a complete backlight object retained in the write journal."""
 
-    if not isinstance(value, dict) or set(value) != BACKLIGHT_KEYS:
-        raise NuveProtocolError("uncertain backlight command is invalid")
-    if not isinstance(value.get("on"), bool):
-        raise NuveProtocolError("uncertain backlight command is invalid")
-    for key in ("hue", "value"):
-        candidate = value.get(key)
-        if (
-            isinstance(candidate, bool)
-            or not isinstance(candidate, (int, float))
-            or not math.isfinite(float(candidate))
-            or not 0 <= float(candidate) <= 1
-        ):
-            raise NuveProtocolError("uncertain backlight command is invalid")
-    shade_index = value.get("shadeIndex")
-    if (
-        isinstance(shade_index, bool)
-        or not isinstance(shade_index, int)
-        or not 0 <= shade_index <= 5
-    ):
+    if not valid_backlight(value, complete=True):
         raise NuveProtocolError("uncertain backlight command is invalid")
 
 
 def _validate_uncertain_device_settings_desired(value: Any) -> None:
     """Validate the complete settings subsection retained in the journal."""
 
-    if not isinstance(value, dict) or set(value) != DEVICE_SETTINGS_KEYS:
-        raise NuveProtocolError("uncertain device-settings command is invalid")
-    for key in ("brightness", "speaker"):
-        candidate = value.get(key)
-        if (
-            isinstance(candidate, bool)
-            or not isinstance(candidate, int)
-            or not 0 <= candidate <= 100
-        ):
-            raise NuveProtocolError("uncertain device-settings command is invalid")
-    for key in ("brightness_mode", "temperatureUnit", "timeFormat"):
-        candidate = value.get(key)
-        if isinstance(candidate, bool) or not isinstance(candidate, int) or candidate not in (0, 1):
-            raise NuveProtocolError("uncertain device-settings command is invalid")
-    for key in ("currentTimezone", "nightModeStart", "nightModeEnd"):
-        if not isinstance(value.get(key), str):
-            raise NuveProtocolError("uncertain device-settings command is invalid")
-    for key in (
-        "effectDst",
-        "sleepModeLogo",
-        "tofEnabled",
-        "ledBlinkingEnabled",
-        "setTimeAuto",
-        "nightModeEnabled",
-    ):
-        if not isinstance(value.get(key), bool):
-            raise NuveProtocolError("uncertain device-settings command is invalid")
-    try:
-        start = normalize_night_mode_time(value["nightModeStart"], name="nightModeStart")
-        end = normalize_night_mode_time(value["nightModeEnd"], name="nightModeEnd")
-    except NuveProtocolError as err:
-        raise NuveProtocolError("uncertain device-settings command is invalid") from err
-    if start == end:
+    if not valid_device_settings(value, complete=True):
         raise NuveProtocolError("uncertain device-settings command is invalid")
 
 
 def _validate_uncertain_fan_desired(desired: dict[str, Any]) -> None:
     """Validate the exact fan command."""
 
-    if not set(desired).issubset({"fan"}):
+    if set(desired) != {"fan"}:
         raise NuveProtocolError("uncertain fan command contains unsupported fields")
-    fan = desired.get("fan")
-    if not isinstance(fan, dict) or set(fan) != {"mode", "workingPerHour"}:
-        raise NuveProtocolError("uncertain fan command is invalid")
-    mode = fan.get("mode")
-    working_per_hour = fan.get("workingPerHour")
-    if (
-        isinstance(mode, bool)
-        or not isinstance(mode, int)
-        or mode not in FAN_MODE_IDS
-        or isinstance(working_per_hour, bool)
-        or not isinstance(working_per_hour, int)
-        or not MIN_FAN_WORKING_PER_HOUR <= working_per_hour <= MAX_FAN_WORKING_PER_HOUR
-    ):
+    if not valid_fan(desired["fan"]):
         raise NuveProtocolError("uncertain fan command is invalid")

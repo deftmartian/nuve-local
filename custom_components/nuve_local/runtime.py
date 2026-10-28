@@ -12,26 +12,28 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
+from .commands import (
+    CONTROL_SAFE_MODES,
+    valid_backlight,
+    valid_device_settings,
+    valid_fan,
+    valid_mode_id,
+    validated_command_celsius,
+)
 from .const import (
-    BACKLIGHT_KEYS,
     BOOTSTRAP_FIRMWARE_ALLOWLIST,
     BOOTSTRAP_WINDOW_SECONDS,
     COMMAND_TIMEOUT_SECONDS,
-    DISPLAY_SETTINGS_KEYS,
-    FAN_MODE_IDS,
     LIVENESS_TIMEOUT_SECONDS,
     MAX_AUTO_TEMPERATURE,
     MAX_DEVICE_TEMPERATURE,
-    MAX_FAN_WORKING_PER_HOUR,
     MAX_TARGET_TEMPERATURE,
     MIN_AUTO_TEMPERATURE,
     MIN_DEVICE_TEMPERATURE,
-    MIN_FAN_WORKING_PER_HOUR,
     MIN_TARGET_TEMPERATURE,
     MONITOR_FUTURE_SKEW_SECONDS,
     MONITOR_MAX_AGE_SECONDS,
     OUTDOOR_MAX_AGE_SECONDS,
-    TARGET_TEMPERATURE_STEP,
     TEMP_CORRECTION_VERSIONS_BY_FIRMWARE,
 )
 from .models import NuveMode, NuveState, NuveSystemType
@@ -48,34 +50,8 @@ from .protocol import (
     render_settings_response,
 )
 
-CONTROL_SAFE_MODES = frozenset({NuveMode.COOL, NuveMode.HEAT, NuveMode.AUTO, NuveMode.OFF})
 ACTIVE_SCHEDULE_TYPES = frozenset({0, 1, 2, 3, 8})
 NO_SCHEDULE_TYPE = 9
-
-
-def validated_command_celsius(
-    value: Any,
-    *,
-    minimum: float,
-    maximum: float,
-) -> float:
-    """Return one whole-degree Celsius command value inside an exact range."""
-
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError("invalid command temperature")
-    temperature = float(value)
-    if (
-        not math.isfinite(temperature)
-        or temperature < minimum
-        or temperature > maximum
-        or not math.isclose(
-            temperature / TARGET_TEMPERATURE_STEP,
-            round(temperature / TARGET_TEMPERATURE_STEP),
-            abs_tol=1e-7,
-        )
-    ):
-        raise ValueError("invalid command temperature")
-    return temperature
 
 
 SYSTEM_TYPE_NAMES = {
@@ -1056,7 +1032,8 @@ class NuveRuntime:
         pending = self._pending_command
         settings_result = self._settings_owned_upload_result(incoming, received_at)
         revision = prepared_revision or self._settings_snapshot_revision(incoming, received_at)
-        permitted_changes = self._delivered_settings_echo_changes(
+        permitted_changes = self._delivered_echo_changes(
+            "settings",
             incoming,
             received_at=received_at,
         )
@@ -1132,7 +1109,8 @@ class NuveRuntime:
         incoming = parse_auto_mode_baseline(snapshot)
         pending = self._pending_command
         revision = prepared_revision or self._auto_snapshot_revision(incoming, received_at)
-        permitted_changes = self._delivered_auto_echo_changes(
+        permitted_changes = self._delivered_echo_changes(
+            "auto",
             incoming,
             received_at=received_at,
         )
@@ -1247,7 +1225,7 @@ class NuveRuntime:
         self.settings_revision_floor = self._latest_revision(self.settings_revision_floor, revision)
         pending = self._pending_command
         if pending is not None and pending.kind == "settings" and not pending.delivered:
-            pending.payload = self._settings_payload(self.settings_snapshot, pending.desired)
+            pending.payload = self._command_payload(self.settings_snapshot, pending.desired)
         self.settings_revision = revision
         self.async_update_state(replace(self.state, settings_revision=revision))
         return revision
@@ -1772,7 +1750,7 @@ class NuveRuntime:
             desired = self._changed_fields(desired, self.settings_snapshot)
             if not desired:
                 return
-            payload = self._settings_payload(self.settings_snapshot, desired)
+            payload = self._command_payload(self.settings_snapshot, desired)
             pending = self._queue_command_locked("settings", desired, payload)
         await self._wait_for_command(pending)
 
@@ -1786,7 +1764,7 @@ class NuveRuntime:
             desired = self._changed_fields(desired, self.auto_mode_snapshot)
             if not desired:
                 return
-            payload = self._auto_payload(self.auto_mode_snapshot, desired)
+            payload = self._command_payload(self.auto_mode_snapshot, desired)
             if float(payload["auto_temp_low"]) >= float(payload["auto_temp_high"]):
                 raise ControlNotReadyError
             pending = self._queue_command_locked("auto", desired, payload)
@@ -1909,115 +1887,22 @@ class NuveRuntime:
                 )
             except ValueError:
                 raise ControlNotReadyError from None
-        if "mode_id" in validated:
-            value = validated["mode_id"]
-            if isinstance(value, bool) or not isinstance(value, int) or value not in (1, 2, 3, 5):
-                raise ControlNotReadyError
-        if "fan" in validated:
-            NuveRuntime._validate_fan_change(validated["fan"])
+        if "mode_id" in validated and not valid_mode_id(validated["mode_id"]):
+            raise ControlNotReadyError
+        if "fan" in validated and not valid_fan(validated["fan"]):
+            raise ControlNotReadyError
         if "backlight" in validated:
-            NuveRuntime._validate_backlight_change(validated["backlight"])
-        if "settings" in validated:
-            NuveRuntime._validate_device_settings_change(validated["settings"])
+            backlight = validated["backlight"]
+            if not valid_backlight(backlight, complete=False):
+                raise ControlNotReadyError
+            for key in ("hue", "value"):
+                if key in backlight:
+                    backlight[key] = float(backlight[key])
+        if "settings" in validated and not valid_device_settings(
+            validated["settings"], complete=False
+        ):
+            raise ControlNotReadyError
         return validated
-
-    @staticmethod
-    def _validate_fan_change(value: Any) -> None:
-        if not isinstance(value, dict) or set(value) != {"mode", "workingPerHour"}:
-            raise ControlNotReadyError
-        mode = value["mode"]
-        working_per_hour = value["workingPerHour"]
-        if (
-            isinstance(mode, bool)
-            or not isinstance(mode, int)
-            or mode not in FAN_MODE_IDS
-            or isinstance(working_per_hour, bool)
-            or not isinstance(working_per_hour, int)
-            or not MIN_FAN_WORKING_PER_HOUR <= working_per_hour <= MAX_FAN_WORKING_PER_HOUR
-        ):
-            raise ControlNotReadyError
-
-    @staticmethod
-    def _validate_backlight_change(value: Any) -> None:
-        if not isinstance(value, dict) or not value or not set(value).issubset(BACKLIGHT_KEYS):
-            raise ControlNotReadyError
-        if "on" in value and not isinstance(value["on"], bool):
-            raise ControlNotReadyError
-        for key in ("hue", "value"):
-            if key not in value:
-                continue
-            candidate = value[key]
-            if (
-                isinstance(candidate, bool)
-                or not isinstance(candidate, (int, float))
-                or not math.isfinite(float(candidate))
-                or not 0 <= float(candidate) <= 1
-            ):
-                raise ControlNotReadyError
-            value[key] = float(candidate)
-        if "shadeIndex" in value:
-            shade_index = value["shadeIndex"]
-            if (
-                isinstance(shade_index, bool)
-                or not isinstance(shade_index, int)
-                or not 0 <= shade_index <= 5
-            ):
-                raise ControlNotReadyError
-
-    @staticmethod
-    def _validate_device_settings_change(value: Any) -> None:
-        if (
-            not isinstance(value, dict)
-            or not value
-            or not set(value).issubset(DISPLAY_SETTINGS_KEYS)
-        ):
-            raise ControlNotReadyError
-        NuveRuntime._validate_device_settings_integers(value)
-        NuveRuntime._validate_device_settings_booleans(value)
-        NuveRuntime._validate_device_settings_times(value)
-
-    @staticmethod
-    def _validate_device_settings_integers(value: dict[str, Any]) -> None:
-        if "brightness" in value:
-            brightness = value["brightness"]
-            if (
-                isinstance(brightness, bool)
-                or not isinstance(brightness, int)
-                or not 0 <= brightness <= 100
-            ):
-                raise ControlNotReadyError
-        if "brightness_mode" in value:
-            mode = value["brightness_mode"]
-            if isinstance(mode, bool) or not isinstance(mode, int) or mode not in (0, 1):
-                raise ControlNotReadyError
-        if "timeFormat" in value:
-            candidate = value["timeFormat"]
-            if (
-                isinstance(candidate, bool)
-                or not isinstance(candidate, int)
-                or candidate not in (0, 1)
-            ):
-                raise ControlNotReadyError
-
-    @staticmethod
-    def _validate_device_settings_booleans(value: dict[str, Any]) -> None:
-        for key in (
-            "tofEnabled",
-            "ledBlinkingEnabled",
-            "nightModeEnabled",
-        ):
-            if key in value and not isinstance(value[key], bool):
-                raise ControlNotReadyError
-
-    @staticmethod
-    def _validate_device_settings_times(value: dict[str, Any]) -> None:
-        for key in ("nightModeStart", "nightModeEnd"):
-            if key not in value:
-                continue
-            try:
-                normalize_night_mode_time(value[key], name=key)
-            except NuveProtocolError as err:
-                raise ControlNotReadyError from err
 
     @staticmethod
     def _expand_settings_changes(
@@ -2080,38 +1965,19 @@ class NuveRuntime:
         keys = set(desired)
         return keys in ({"fan"}, {"backlight"}, {"settings"})
 
-    def _delivered_settings_echo_changes(
+    def _delivered_echo_changes(
         self,
+        kind: Literal["settings", "auto"],
         incoming: dict[str, Any],
         *,
         received_at: datetime,
     ) -> frozenset[str]:
-        """Return exact queued fields in a coherent post-delivery Settings echo."""
+        """Return exact queued fields in a coherent post-delivery echo."""
 
         pending = self._pending_command
         if (
             pending is None
-            or pending.kind != "settings"
-            or not pending.delivered
-            or pending.delivered_at is None
-            or received_at <= pending.delivered_at
-            or not self._matches(pending.desired, incoming)
-        ):
-            return frozenset()
-        return frozenset(pending.desired)
-
-    def _delivered_auto_echo_changes(
-        self,
-        incoming: dict[str, Any],
-        *,
-        received_at: datetime,
-    ) -> frozenset[str]:
-        """Return exact queued fields in a coherent post-delivery Auto echo."""
-
-        pending = self._pending_command
-        if (
-            pending is None
-            or pending.kind != "auto"
+            or pending.kind != kind
             or not pending.delivered
             or pending.delivered_at is None
             or received_at <= pending.delivered_at
@@ -2160,7 +2026,7 @@ class NuveRuntime:
         return max(first, second)
 
     @staticmethod
-    def _settings_payload(baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
+    def _command_payload(baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
         payload = copy.deepcopy(baseline)
         payload.update(copy.deepcopy(changes))
         return payload
@@ -2202,12 +2068,6 @@ class NuveRuntime:
         payload["command_time"] = (
             command_time or self.live_data_command_time or self.settings_revision or "local"
         )
-        return payload
-
-    @staticmethod
-    def _auto_payload(baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
-        payload = copy.deepcopy(baseline)
-        payload.update(copy.deepcopy(changes))
         return payload
 
     def _merge_settings_into_state(
