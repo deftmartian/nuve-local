@@ -7,14 +7,19 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
+from custom_components.nuve_local.data import NuveRuntimeData
 from custom_components.nuve_local.diagnostics import async_get_config_entry_diagnostics
 from custom_components.nuve_local.models import NuveMode, NuveState
 from custom_components.nuve_local.runtime import NuveRuntime
 
 
+class FakeServer:
+    is_running = False
+
+
 @dataclass
 class FakeEntry:
-    runtime_data: NuveRuntime | None = None
+    runtime_data: Any = None
     data: dict[str, Any] = field(default_factory=dict)
     options: dict[str, Any] = field(default_factory=dict)
 
@@ -46,7 +51,7 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
             ),
         )
         entry = FakeEntry(
-            runtime_data=runtime,
+            runtime_data=NuveRuntimeData(runtime=runtime, server=FakeServer()),  # type: ignore[arg-type]
             data={
                 **secrets,
                 "listen_port": 18443,

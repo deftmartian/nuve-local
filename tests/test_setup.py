@@ -10,11 +10,8 @@ from typing import Any
 import pytest
 from homeassistant.exceptions import ConfigEntryNotReady
 
-from custom_components.nuve_local import (
-    _validated_outdoor_temperature_c,
-    async_setup_entry,
-    async_unload_entry,
-)
+from custom_components.nuve_local import async_setup_entry, async_unload_entry
+from custom_components.nuve_local.sources import validated_outdoor_temperature_c
 
 
 @pytest.fixture(autouse=True)
@@ -32,15 +29,24 @@ def stub_repairs_manager(monkeypatch: Any) -> None:
             pass
 
     monkeypatch.setattr(
-        "custom_components.nuve_local.repairs.NuveRepairManager",
+        "custom_components.nuve_local.NuveRepairManager",
         FakeRepairManager,
     )
 
 
+async def _run_unload_callbacks(entry: FakeEntry) -> None:
+    """Run the entry's cleanups the way Home Assistant does after a successful unload."""
+
+    for callback in entry.unload_callbacks:
+        result = callback()
+        if asyncio.iscoroutine(result):
+            await result
+
+
 def test_outdoor_temperature_requires_an_explicit_valid_unit() -> None:
-    assert _validated_outdoor_temperature_c("50", "°F") == pytest.approx(10.0)
+    assert validated_outdoor_temperature_c("50", "°F") == pytest.approx(10.0)
     with pytest.raises(ValueError, match="missing its unit"):
-        _validated_outdoor_temperature_c("50", None)
+        validated_outdoor_temperature_c("50", None)
 
 
 @dataclass
@@ -105,7 +111,7 @@ def test_listener_start_failure_cleans_restored_bootstrap_timer(monkeypatch: Any
             stopped = True
             await self._runtime.async_shutdown()
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
         monkeypatch.setattr(
             "custom_components.nuve_local.server.NuveApiServer.async_start", failing_start
         )
@@ -125,8 +131,8 @@ def test_listener_start_failure_cleans_restored_bootstrap_timer(monkeypatch: Any
         with pytest.raises(ConfigEntryNotReady, match="listener could not start"):
             await async_setup_entry(FakeHass(), entry)  # type: ignore[arg-type]
         assert stopped is True
-        assert entry.runtime_data._stopped is True
-        assert entry.runtime_data._bootstrap_timer is None
+        assert entry.runtime_data.runtime._stopped is True
+        assert entry.runtime_data.runtime._bootstrap_timer is None
 
     asyncio.run(scenario())
 
@@ -169,8 +175,8 @@ def test_successful_setup_and_unload_own_the_server_lifecycle(monkeypatch: Any) 
             bus: FakeBus = field(default_factory=FakeBus)
             config_entries: SuccessfulConfigEntries = field(default_factory=SuccessfulConfigEntries)
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-        monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
         entry = FakeEntry(
             data={
                 "serial": "00-000-000000",
@@ -185,7 +191,7 @@ def test_successful_setup_and_unload_own_the_server_lifecycle(monkeypatch: Any) 
         assert lifecycle == ["started", "platforms_forwarded"]
         assert await async_unload_entry(hass, entry) is True  # type: ignore[arg-type]
         assert lifecycle == ["started", "platforms_forwarded", "platforms_unloaded", "stopped"]
-        assert entry.runtime_data._stopped is True
+        assert entry.runtime_data.runtime._stopped is True
 
     asyncio.run(scenario())
 
@@ -208,7 +214,7 @@ def test_failed_platform_unload_preserves_the_running_server() -> None:
             config_entries: RefusingConfigEntries = field(default_factory=RefusingConfigEntries)
 
         entry = FakeEntry(data={})
-        entry.runtime_data = type("Runtime", (), {"server": FakeServer()})()
+        entry.runtime_data = type("RuntimeData", (), {"server": FakeServer()})()
 
         assert await async_unload_entry(UnloadHass(), entry) is False  # type: ignore[arg-type]
         assert stopped is False
@@ -250,8 +256,8 @@ def test_platform_setup_failure_stops_the_listener(monkeypatch: Any) -> None:
             bus: FakeBus = field(default_factory=FakeBus)
             config_entries: FailingConfigEntries = field(default_factory=FailingConfigEntries)
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-        monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
         entry = FakeEntry(
             data={
                 "serial": "00-000-000000",
@@ -264,7 +270,7 @@ def test_platform_setup_failure_stops_the_listener(monkeypatch: Any) -> None:
         with pytest.raises(RuntimeError, match="synthetic platform failure"):
             await async_setup_entry(FailingHass(), entry)  # type: ignore[arg-type]
         assert lifecycle == ["started", "stopped"]
-        assert entry.runtime_data._stopped is True
+        assert entry.runtime_data.runtime._stopped is True
 
     asyncio.run(scenario())
 
@@ -364,8 +370,8 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
             async def async_stop(self) -> None:
                 await self._runtime.async_shutdown()
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-        monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
         state_change_callbacks: list[Any] = []
 
         def track_state_change(*args: Any, **kwargs: Any) -> Any:
@@ -373,15 +379,15 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
             return lambda: None
 
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_change_event",
+            "custom_components.nuve_local.sources.async_track_state_change_event",
             track_state_change,
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_report_event",
+            "custom_components.nuve_local.sources.async_track_state_report_event",
             lambda *args, **kwargs: lambda: None,
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_time_interval",
+            "custom_components.nuve_local.sources.async_track_time_interval",
             lambda *args, **kwargs: lambda: None,
         )
         entry = FakeEntry(
@@ -397,7 +403,7 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
         hass = WeatherHass()
 
         assert await async_setup_entry(hass, entry) is True  # type: ignore[arg-type]
-        runtime = entry.runtime_data
+        runtime = entry.runtime_data.runtime
         assert runtime.outdoor_temperature_c == pytest.approx(20.0)
         assert runtime.outdoor_source == "override_sensor"
         assert runtime.outdoor_location_name == "Amherst"
@@ -439,7 +445,7 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
 def test_stalled_forecast_cannot_block_listener_start(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(
-            "custom_components.nuve_local.FORECAST_REQUEST_TIMEOUT_SECONDS",
+            "custom_components.nuve_local.sources.FORECAST_REQUEST_TIMEOUT_SECONDS",
             0.05,
         )
         listener_started = asyncio.Event()
@@ -510,18 +516,18 @@ def test_stalled_forecast_cannot_block_listener_start(monkeypatch: Any) -> None:
             async def async_stop(self) -> None:
                 await self._runtime.async_shutdown()
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-        monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_change_event",
+            "custom_components.nuve_local.sources.async_track_state_change_event",
             lambda *args, **kwargs: lambda: None,
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_report_event",
+            "custom_components.nuve_local.sources.async_track_state_report_event",
             lambda *args, **kwargs: lambda: None,
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_time_interval",
+            "custom_components.nuve_local.sources.async_track_time_interval",
             lambda *args, **kwargs: lambda: None,
         )
         entry = FakeEntry(
@@ -537,9 +543,9 @@ def test_stalled_forecast_cannot_block_listener_start(monkeypatch: Any) -> None:
         assert await async_setup_entry(WeatherHass(), entry) is True  # type: ignore[arg-type]
         assert listener_started.is_set()
         assert forecast_started.is_set()
-        assert entry.runtime_data.forecast_status == "source_timeout"
-        assert entry.runtime_data.forecast_healthy is False
-        await entry.runtime_data.async_shutdown()
+        assert entry.runtime_data.runtime.forecast_status == "source_timeout"
+        assert entry.runtime_data.runtime.forecast_healthy is False
+        await entry.runtime_data.runtime.async_shutdown()
 
     asyncio.run(scenario())
 
@@ -633,8 +639,8 @@ async def _forecast_source_updates_do_not_accumulate_refresh_tasks(monkeypatch: 
         async def async_stop(self) -> None:
             await self._runtime.async_shutdown()
 
-    monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-    monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+    monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+    monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
     state_change_callbacks: list[Any] = []
 
     def track_state_change(*args: Any, **kwargs: Any) -> Any:
@@ -642,15 +648,15 @@ async def _forecast_source_updates_do_not_accumulate_refresh_tasks(monkeypatch: 
         return lambda: None
 
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_state_change_event",
+        "custom_components.nuve_local.sources.async_track_state_change_event",
         track_state_change,
     )
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_state_report_event",
+        "custom_components.nuve_local.sources.async_track_state_report_event",
         lambda *args, **kwargs: lambda: None,
     )
     monkeypatch.setattr(
-        "homeassistant.helpers.event.async_track_time_interval",
+        "custom_components.nuve_local.sources.async_track_time_interval",
         lambda *args, **kwargs: lambda: None,
     )
     entry = FakeEntry(
@@ -671,8 +677,11 @@ async def _forecast_source_updates_do_not_accumulate_refresh_tasks(monkeypatch: 
     release.set()
     await asyncio.gather(*hass.created_tasks)
     assert calls == 2
+    forecast_refresh = entry.runtime_data.forecast_refresh
+    assert forecast_refresh is not None
     assert await async_unload_entry(hass, entry) is True  # type: ignore[arg-type]
-    assert entry.runtime_data.forecast_refresh is None
+    await _run_unload_callbacks(entry)
+    assert forecast_refresh._closed
 
 
 def test_forecast_source_updates_do_not_accumulate_refresh_tasks(monkeypatch: Any) -> None:
@@ -745,18 +754,18 @@ def test_platform_setup_failure_releases_forecast_subscriptions(monkeypatch: Any
             async def async_stop(self) -> None:
                 await self._runtime.async_shutdown()
 
-        monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-        monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", FakeServer)
+        monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+        monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", FakeServer)
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_change_event",
+            "custom_components.nuve_local.sources.async_track_state_change_event",
             lambda *args, **kwargs: lambda: released.append("state"),
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_state_report_event",
+            "custom_components.nuve_local.sources.async_track_state_report_event",
             lambda *args, **kwargs: lambda: released.append("report"),
         )
         monkeypatch.setattr(
-            "homeassistant.helpers.event.async_track_time_interval",
+            "custom_components.nuve_local.sources.async_track_time_interval",
             lambda *args, **kwargs: lambda: released.append("interval"),
         )
         entry = FakeEntry(
@@ -773,7 +782,7 @@ def test_platform_setup_failure_releases_forecast_subscriptions(monkeypatch: Any
             await async_setup_entry(FailingHass(), entry)  # type: ignore[arg-type]
         assert "state" in released
         assert "interval" in released
-        assert entry.runtime_data._stopped is True
+        assert entry.runtime_data.runtime._stopped is True
 
     asyncio.run(scenario())
 

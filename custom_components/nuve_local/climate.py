@@ -15,7 +15,6 @@ from homeassistant.components.climate.const import (
     HVACAction,
     HVACMode,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import ATTR_TEMPERATURE, UnitOfTemperature
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -30,6 +29,7 @@ from .const import (
     MIN_TARGET_TEMPERATURE,
     TARGET_TEMPERATURE_STEP,
 )
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .models import NuveMode
 from .runtime import NuveRuntime
@@ -54,12 +54,12 @@ HA_TO_NUVE_FAN_MODE = {value: key for key, value in NUVE_TO_HA_FAN_MODE.items()}
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Nuve climate entity."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities([NuveClimate(runtime)])
 
 

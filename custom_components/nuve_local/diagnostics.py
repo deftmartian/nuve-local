@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Any
 
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .commissioning import deployment_profile, pairing_window_is_open
@@ -23,17 +22,17 @@ from .const import (
     CONF_TRUSTED_PROXY_IP,
     CONF_WEATHER_ENTITY,
 )
-from .runtime import NuveRuntime
+from .data import NuveConfigEntry, NuveRuntimeData
+from .repairs import repair_conditions
 
 
 async def async_get_config_entry_diagnostics(
-    hass: HomeAssistant, entry: ConfigEntry
+    hass: HomeAssistant, entry: NuveConfigEntry
 ) -> dict[str, Any]:
     """Return non-secret diagnostics for a config entry."""
 
-    runtime: NuveRuntime | None = getattr(entry, "runtime_data", None)
-    from .repairs import repair_conditions
-
+    data: NuveRuntimeData | None = getattr(entry, "runtime_data", None)
+    runtime = data.runtime if data is not None else None
     source_config = {**entry.data, **entry.options}
     config = {
         key: source_config.get(key)
@@ -48,10 +47,9 @@ async def async_get_config_entry_diagnostics(
             CONF_TEMP_CORRECTION_VERSION,
         )
     }
-    server = getattr(runtime, "server", None) if runtime is not None else None
     deployment = {
         "profile": deployment_profile(source_config),
-        "listener_running": bool(getattr(server, "is_running", False)),
+        "listener_running": data is not None and data.server.is_running,
         "listener_port": source_config.get(CONF_LISTEN_PORT),
         "thermostat_https_port": source_config.get(CONF_THERMOSTAT_HTTPS_PORT),
         "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),

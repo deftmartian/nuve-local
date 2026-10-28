@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 from homeassistant.components.number import NumberEntity, NumberMode
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -16,18 +15,19 @@ from .const import (
     MAX_FAN_WORKING_PER_HOUR,
     MIN_FAN_WORKING_PER_HOUR,
 )
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .runtime import NuveRuntime
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Nuve fan circulation number."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities(
         [
             NuveFanWorkingPerHour(runtime),

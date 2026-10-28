@@ -3,23 +3,23 @@
 from __future__ import annotations
 
 from homeassistant.components.switch import SwitchEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .runtime import NuveRuntime
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Nuve preference switches."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities(
         [
             NuveNightMode(runtime),

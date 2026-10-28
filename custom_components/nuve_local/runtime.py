@@ -121,8 +121,6 @@ class NuveRuntime:
     bootstrap_no_update_confirmed: bool = False
     temp_correction_version: int | None = None
     state: NuveState = field(default_factory=NuveState)
-    server: Any = None
-    forecast_refresh: Any = None
     endpoint_counts: dict[str, int] = field(default_factory=dict)
     rejected_requests: int = 0
     outdoor_temperature_c: float | None = None

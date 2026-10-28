@@ -12,7 +12,6 @@ from homeassistant.components.sensor import (
     SensorEntityDescription,
     SensorStateClass,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     PERCENTAGE,
     EntityCategory,
@@ -23,6 +22,7 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .models import NuveState, NuveSystemType
 from .runtime import NuveRuntime
@@ -448,12 +448,12 @@ RUNTIME_SENSORS: tuple[NuveRuntimeSensorEntityDescription, ...] = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Nuve Local sensors."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities(
         [
             *(NuveSensor(runtime, description) for description in SENSORS),

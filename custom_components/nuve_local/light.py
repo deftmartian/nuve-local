@@ -11,12 +11,12 @@ from homeassistant.components.light import (
     LightEntity,
 )
 from homeassistant.components.light.const import ColorMode
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .runtime import NuveRuntime
 
@@ -25,12 +25,12 @@ FIXED_SHADE_HUE = 30.58823529411765
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the Nuve display-backlight light entity."""
 
-    async_add_entities([NuveDisplayBacklight(entry.runtime_data)])
+    async_add_entities([NuveDisplayBacklight(entry.runtime_data.runtime)])
 
 
 class NuveDisplayBacklight(NuveEntity, LightEntity):

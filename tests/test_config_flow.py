@@ -64,14 +64,19 @@ from custom_components.nuve_local.const import (
     DEPLOYMENT_PROFILE_DIRECT_TLS,
     DEPLOYMENT_PROFILE_REVERSE_PROXY,
 )
+from custom_components.nuve_local.data import NuveRuntimeData
 from custom_components.nuve_local.models import NuveMode, NuveState
 from custom_components.nuve_local.runtime import NuveRuntime
 from tests.helpers import attach_memory_persistence
 
 
-@dataclass
 class FakeEntry:
-    runtime_data: NuveRuntime | None
+    runtime_data: Any
+
+    def __init__(self, runtime: NuveRuntime | None) -> None:
+        self.runtime_data = (
+            NuveRuntimeData(runtime=runtime, server=None) if runtime is not None else None  # type: ignore[arg-type]
+        )
 
 
 def _http_flow_schema(schema: vol.Schema) -> list[dict[str, Any]]:

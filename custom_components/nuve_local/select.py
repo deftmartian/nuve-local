@@ -5,13 +5,13 @@ from __future__ import annotations
 from typing import ClassVar
 
 from homeassistant.components.select import SelectEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .runtime import NuveRuntime
 
@@ -29,12 +29,12 @@ BACKLIGHT_SHADES = (
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Nuve display selects."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities(
         [
             NuveBrightnessMode(runtime),

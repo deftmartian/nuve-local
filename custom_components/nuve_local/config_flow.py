@@ -524,8 +524,8 @@ def _valid_contractor_url(value: Any) -> bool:
 def _control_ready(config_entry: ConfigEntry) -> bool:
     """Return whether the live runtime satisfies every control activation gate."""
 
-    runtime = getattr(config_entry, "runtime_data", None)
-    return runtime is not None and runtime.can_enable_control
+    data = getattr(config_entry, "runtime_data", None)
+    return data is not None and data.runtime.can_enable_control
 
 
 def _control_is_being_enabled(defaults: dict[str, Any], user_input: dict[str, Any]) -> bool:
@@ -636,9 +636,9 @@ class NuveLocalOptionsFlow(OptionsFlowWithReload):
         if user_input is not None:
             return await self.async_step_init()
         defaults = self._defaults
-        runtime = getattr(self.config_entry, "runtime_data", None)
-        server = getattr(runtime, "server", None) if runtime is not None else None
-        if runtime is None:
+        data = getattr(self.config_entry, "runtime_data", None)
+        runtime = data.runtime if data is not None else None
+        if data is None or runtime is None:
             pairing = "window open" if pairing_window_is_open(defaults) else "window closed"
             listener = "unavailable"
             control = "runtime_unavailable"
@@ -648,7 +648,7 @@ class NuveLocalOptionsFlow(OptionsFlowWithReload):
                 if runtime.paired
                 else ("window open" if pairing_window_is_open(defaults) else "window closed")
             )
-            listener = "running" if getattr(server, "is_running", False) else "stopped"
+            listener = "running" if data.server.is_running else "stopped"
             control = runtime.control_block_reason
         return self.async_show_form(
             step_id="status",

@@ -6,13 +6,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .errors import ControlNotReadyError
 from .runtime import NuveRuntime
@@ -20,12 +20,12 @@ from .runtime import NuveRuntime
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up the explicit baseline-capture button."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities([NuveBaselineCaptureButton(runtime)])
 
 

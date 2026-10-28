@@ -108,10 +108,10 @@ class FakeServer:
 
 
 def _patch_component(monkeypatch: Any, server_cls: type[FakeServer] = FakeServer) -> None:
-    monkeypatch.setattr("custom_components.nuve_local.storage.NuveBaselineStore", FakeStore)
-    monkeypatch.setattr("custom_components.nuve_local.server.NuveApiServer", server_cls)
+    monkeypatch.setattr("custom_components.nuve_local.NuveBaselineStore", FakeStore)
+    monkeypatch.setattr("custom_components.nuve_local.NuveApiServer", server_cls)
     monkeypatch.setattr(
-        "custom_components.nuve_local.repairs.NuveRepairManager",
+        "custom_components.nuve_local.NuveRepairManager",
         lambda *args, **kwargs: type(
             "FakeRepairs",
             (),
@@ -134,7 +134,7 @@ def test_real_config_entry_setup_unload_and_on_unload(tmp_path: Any, monkeypatch
         assert await async_unload_entry(hass, entry) is True
         await entry._async_process_on_unload(hass)
         assert "operator" in released
-        assert entry.runtime_data._stopped is True
+        assert entry.runtime_data.runtime._stopped is True
         await hass.async_stop()
 
     asyncio.run(scenario())
@@ -151,7 +151,7 @@ def test_real_config_entry_bind_failure_is_retryable(tmp_path: Any, monkeypatch:
         entry = _config_entry()
         with pytest.raises(ConfigEntryNotReady, match="listener could not start"):
             await async_setup_entry(hass, entry)
-        assert entry.runtime_data._stopped is True
+        assert entry.runtime_data.runtime._stopped is True
         await hass.async_stop()
 
     asyncio.run(scenario())
@@ -198,7 +198,7 @@ def test_failed_setup_cleanup_can_be_followed_by_ha_unload(tmp_path: Any, monkey
         try:
             with pytest.raises(RuntimeError, match="platform setup failed"):
                 await async_setup_entry(hass, entry)
-            assert entry.runtime_data._stopped
+            assert entry.runtime_data.runtime._stopped
             # Home Assistant invokes these after async_setup_entry raises.
             await entry._async_process_on_unload(hass)
             await hass.async_block_till_done()

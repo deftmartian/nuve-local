@@ -5,25 +5,25 @@ from __future__ import annotations
 from datetime import time
 
 from homeassistant.components.time import TimeEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
+from .data import NuveConfigEntry
 from .entity import NuveEntity
 from .runtime import NuveRuntime
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: NuveConfigEntry,
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     """Set up Nuve night-mode boundaries."""
 
-    runtime: NuveRuntime = entry.runtime_data
+    runtime = entry.runtime_data.runtime
     async_add_entities(
         [NuveNightModeTime(runtime, start=True), NuveNightModeTime(runtime, start=False)]
     )
