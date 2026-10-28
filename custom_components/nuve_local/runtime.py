@@ -54,6 +54,13 @@ from .protocol import (
     render_settings_bootstrap_response,
     render_settings_response,
 )
+from .trace import (
+    TRACE_EVENT_LIMIT,
+    RuntimeTraceEvent,
+    elapsed_ms,
+    sanitized_trace,
+    trace_event,
+)
 
 ACTIVE_SCHEDULE_TYPES = frozenset({0, 1, 2, 3, 8})
 NO_SCHEDULE_TYPE = 9
@@ -67,7 +74,6 @@ SYSTEM_TYPE_NAMES = {
     NuveSystemType.DUAL_FUEL_HEATING: "dual_fuel_heating",
 }
 ResponseSender = Callable[[dict[str, Any]], Awaitable[None]]
-TRACE_EVENT_LIMIT = 128
 _LOGGER = logging.getLogger(__name__)
 
 
@@ -97,17 +103,6 @@ class UncertainCommand:
     # no server-clock boundary has yet been established after its body was sent.
     delivered_at: datetime | None
     revision: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class RuntimeTraceEvent:
-    """One size-limited runtime event without protocol values."""
-
-    timestamp: datetime
-    event: str
-    family: Literal["settings", "auto", "monitor"] | None = None
-    result: str | None = None
-    duration_ms: int | None = None
 
 
 @dataclass(slots=True)
@@ -237,16 +232,7 @@ class NuveRuntime:
     def sanitized_event_trace(self) -> list[dict[str, Any]]:
         """Return a size-limited support timeline without protocol values."""
 
-        return [
-            {
-                "timestamp": item.timestamp.isoformat(),
-                "event": item.event,
-                "family": item.family,
-                "result": item.result,
-                "duration_ms": item.duration_ms,
-            }
-            for item in self._event_trace
-        ]
+        return sanitized_trace(self._event_trace)
 
     @property
     def uncertain_outcome(self) -> bool:
@@ -1675,7 +1661,7 @@ class NuveRuntime:
             "command_delivery",
             family=pending.kind,
             result="body_sent",
-            duration_ms=self._elapsed_ms(pending.queued_at, delivered_at),
+            duration_ms=elapsed_ms(pending.queued_at, delivered_at),
             at=delivered_at,
         )
 
@@ -2387,7 +2373,7 @@ class NuveRuntime:
             "command",
             family=pending.kind,
             result=result,
-            duration_ms=self._elapsed_ms(pending.queued_at, datetime.now(UTC)),
+            duration_ms=elapsed_ms(pending.queued_at, datetime.now(UTC)),
         )
         self._notify_listeners()
         if not pending.future.done():
@@ -2413,12 +2399,8 @@ class NuveRuntime:
                 "command",
                 family=pending_kind,
                 result=result,
-                duration_ms=self._elapsed_ms(pending.queued_at, datetime.now(UTC)),
+                duration_ms=elapsed_ms(pending.queued_at, datetime.now(UTC)),
             )
-
-    @staticmethod
-    def _elapsed_ms(started_at: datetime, finished_at: datetime) -> int:
-        return max(0, round((finished_at - started_at).total_seconds() * 1000))
 
     def _trace_elapsed_event(
         self,
@@ -2433,7 +2415,7 @@ class NuveRuntime:
             event,
             family=family,
             result=result,
-            duration_ms=self._elapsed_ms(started_at, finished_at),
+            duration_ms=elapsed_ms(started_at, finished_at),
             at=finished_at,
         )
 
@@ -2448,17 +2430,8 @@ class NuveRuntime:
     ) -> None:
         if not self._trace_enabled:
             return
-        timestamp = at or datetime.now(UTC)
-        if timestamp.tzinfo is None:
-            timestamp = timestamp.replace(tzinfo=UTC)
         self._event_trace.append(
-            RuntimeTraceEvent(
-                timestamp=timestamp.astimezone(UTC),
-                event=event,
-                family=family,
-                result=result,
-                duration_ms=duration_ms,
-            )
+            trace_event(event, family=family, result=result, duration_ms=duration_ms, at=at)
         )
 
     def _trace_control_block_transition(self) -> None:
