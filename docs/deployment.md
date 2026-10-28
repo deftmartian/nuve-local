@@ -36,9 +36,14 @@ Keep the completed worksheet and device backups private.
 
 ## 2. Connect over SSH and make a backup
 
-The thermostat's recovery image enables root SSH on TCP 22 with a vendor-default
-account (`root`) and a vendor-default password for your firmware version; this
-guide does not reproduce the password. Enter it interactively. On first connection,
+Recovery image 1.5.8 enables root SSH on TCP 22 with this vendor default:
+
+```text
+username: root
+password: sterm
+```
+
+Other versions may differ. Enter the password interactively. On first connection,
 record the host-key fingerprint:
 
 ```bash
