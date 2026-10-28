@@ -9,7 +9,7 @@ import json
 import logging
 import math
 import ssl
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 from urllib.parse import urlencode
@@ -361,6 +361,22 @@ class NuveApiServer:
         )
 
     async def _get_settings(self, request: web.Request) -> web.StreamResponse:
+        return await self._serve_command(
+            request, self._runtime.async_get_settings_response, label="settings"
+        )
+
+    async def _get_auto_mode(self, request: web.Request) -> web.StreamResponse:
+        return await self._serve_command(
+            request, self._runtime.async_get_auto_mode_response, label="Auto"
+        )
+
+    async def _serve_command(
+        self,
+        request: web.Request,
+        get_response: Callable[..., Awaitable[dict[str, Any]]],
+        *,
+        label: str,
+    ) -> web.StreamResponse:
         response: web.StreamResponse | None = None
 
         async def send_command(body: dict[str, Any]) -> None:
@@ -368,14 +384,13 @@ class NuveApiServer:
             response = await self._write_json_response(request, body)
 
         try:
-            body = await self._runtime.async_get_settings_response(
-                requested_at=datetime.now(UTC), response_sender=send_command
-            )
+            body = await get_response(requested_at=datetime.now(UTC), response_sender=send_command)
         except PersistenceUnavailableError as err:
             if response is not None and response.prepared:
                 _LOGGER.error(
-                    "Nuve settings command was sent but its final delivery boundary "
-                    "could not be persisted; control is latched off"
+                    "Nuve %s command was sent but its final delivery boundary "
+                    "could not be persisted; control is latched off",
+                    label,
                 )
                 return response
             raise web.HTTPServiceUnavailable(text="canonical persistence unavailable") from err
@@ -411,29 +426,6 @@ class NuveApiServer:
                 family="settings",
             )
         return web.json_response(_devapi_success_payload(render_settings_ack(revision)))
-
-    async def _get_auto_mode(self, request: web.Request) -> web.StreamResponse:
-        response: web.StreamResponse | None = None
-
-        async def send_command(body: dict[str, Any]) -> None:
-            nonlocal response
-            response = await self._write_json_response(request, body)
-
-        try:
-            body = await self._runtime.async_get_auto_mode_response(
-                requested_at=datetime.now(UTC), response_sender=send_command
-            )
-        except PersistenceUnavailableError as err:
-            if response is not None and response.prepared:
-                _LOGGER.error(
-                    "Nuve Auto command was sent but its final delivery boundary "
-                    "could not be persisted; control is latched off"
-                )
-                return response
-            raise web.HTTPServiceUnavailable(text="canonical persistence unavailable") from err
-        if response is not None:
-            return response
-        return web.json_response(_devapi_success_payload(body))
 
     @staticmethod
     async def _write_json_response(
@@ -477,50 +469,40 @@ class NuveApiServer:
         return web.json_response(_devapi_success_payload(render_auto_mode_ack(revision)))
 
     async def _update_device_settings(self, request: web.Request) -> web.Response:
-        body = await self._json_object(request)
-        try:
-            snapshot = parse_device_settings_upload(body)
-        except NuveProtocolError as err:
-            raise web.HTTPBadRequest(text=str(err)) from err
-        async with self._runtime.persistence_lock:
-            received_at = datetime.now(UTC)
-            try:
-                revision, candidate, full = self._runtime.prepare_partial_settings(
-                    "settings", snapshot, received_at=received_at
-                )
-            except ControlNotReadyError as err:
-                raise web.HTTPConflict(text="full settings baseline is not available") from err
-            await self._persist_and_commit(
-                candidate,
-                lambda: self._runtime.async_accept_partial_settings(
-                    "settings",
-                    snapshot,
-                    received_at=received_at,
-                    prepared_snapshot=full,
-                    prepared_revision=revision,
-                ),
-                family="settings",
-            )
-        return web.json_response(_devapi_success_payload(render_partial_settings_ack(revision)))
+        return await self._update_partial_settings(
+            request, "settings", parse_device_settings_upload
+        )
 
     async def _update_system_settings(self, request: web.Request) -> web.Response:
+        return await self._update_partial_settings(
+            request,
+            "system",
+            lambda body: parse_system_settings_upload(body, serial=self._runtime.serial),
+        )
+
+    async def _update_partial_settings(
+        self,
+        request: web.Request,
+        section: Literal["settings", "system"],
+        parse: Callable[[Any], dict[str, Any]],
+    ) -> web.Response:
         body = await self._json_object(request)
         try:
-            snapshot = parse_system_settings_upload(body, serial=self._runtime.serial)
+            snapshot = parse(body)
         except NuveProtocolError as err:
             raise web.HTTPBadRequest(text=str(err)) from err
         async with self._runtime.persistence_lock:
             received_at = datetime.now(UTC)
             try:
                 revision, candidate, full = self._runtime.prepare_partial_settings(
-                    "system", snapshot, received_at=received_at
+                    section, snapshot, received_at=received_at
                 )
             except ControlNotReadyError as err:
                 raise web.HTTPConflict(text="full settings baseline is not available") from err
             await self._persist_and_commit(
                 candidate,
                 lambda: self._runtime.async_accept_partial_settings(
-                    "system",
+                    section,
                     snapshot,
                     received_at=received_at,
                     prepared_snapshot=full,
