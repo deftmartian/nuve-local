@@ -34,7 +34,7 @@ def _data() -> dict[str, object]:
 def test_storage_envelope_binds_serial_hashes_and_immutable_initial_capture() -> None:
     first_at = datetime(2026, 8, 9, 6, 0, tzinfo=UTC)
     first = _build_storage_envelope(_data(), serial=SERIAL, previous=None, saved_at=first_at)
-    restored = validate_stored_baselines(first, serial=SERIAL, require_envelope=True)
+    restored = validate_stored_baselines(first, serial=SERIAL)
     assert restored["settings"]["temp"] == 21.5
     assert first["complete"] is True
     assert first["serial_binding"] == SERIAL
@@ -53,7 +53,7 @@ def test_storage_envelope_binds_serial_hashes_and_immutable_initial_capture() ->
     assert second["previous_good"]["settings"]["temp"] == 21.5
 
 
-def test_corrupt_current_baseline_recovers_previous_good_copy() -> None:
+def test_corrupt_or_foreign_baseline_is_rejected() -> None:
     first = _build_storage_envelope(
         _data(),
         serial=SERIAL,
@@ -71,9 +71,10 @@ def test_corrupt_current_baseline_recovers_previous_good_copy() -> None:
     corrupt = copy.deepcopy(second)
     corrupt["settings"]["temp"] = 30.0
 
-    restored = validate_stored_baselines(corrupt, serial=SERIAL)
-    assert restored["settings"]["temp"] == 21.5
-    assert validate_stored_baselines(second, serial="different") == {"persistence_fault": True}
+    with pytest.raises(NuveProtocolError):
+        validate_stored_baselines(corrupt, serial=SERIAL)
+    with pytest.raises(NuveProtocolError):
+        validate_stored_baselines(second, serial="different")
 
 
 def test_uncertain_command_delivery_boundary_survives_validation() -> None:
@@ -92,7 +93,7 @@ def test_uncertain_command_delivery_boundary_survives_validation() -> None:
         saved_at=delivered_at,
     )
 
-    restored = validate_stored_baselines(envelope, serial=SERIAL, require_envelope=True)
+    restored = validate_stored_baselines(envelope, serial=SERIAL)
     assert restored["uncertain_command"] == {
         "kind": "settings",
         "desired": {"temp": 22.0},
@@ -107,7 +108,7 @@ def test_uncertain_command_delivery_boundary_survives_validation() -> None:
         previous=envelope,
         saved_at=delivered_at,
     )
-    restored = validate_stored_baselines(provisional, serial=SERIAL, require_envelope=True)
+    restored = validate_stored_baselines(provisional, serial=SERIAL)
     assert restored["uncertain_command"]["delivered_at"] is None
 
 
@@ -116,10 +117,7 @@ def test_uncertain_scheduled_fan_command_survives_validation() -> None:
     data = _data()
     data["uncertain_command"] = {
         "kind": "settings",
-        "desired": {
-            "fan": {"mode": 1, "workingPerHour": 40},
-            "hold_period": "1: TwoHours; 2: UntilChanged",
-        },
+        "desired": {"fan": {"mode": 1, "workingPerHour": 40}},
         "delivered_at": None,
         "revision": "2026-08-09 06:00:02",
     }
@@ -130,7 +128,7 @@ def test_uncertain_scheduled_fan_command_survives_validation() -> None:
         saved_at=saved_at,
     )
 
-    restored = validate_stored_baselines(envelope, serial=SERIAL, require_envelope=True)
+    restored = validate_stored_baselines(envelope, serial=SERIAL)
     assert restored["uncertain_command"]["desired"] == data["uncertain_command"]["desired"]
 
 
@@ -151,7 +149,7 @@ def test_uncertain_display_command_survives_validation(section: str) -> None:
         saved_at=saved_at,
     )
 
-    restored = validate_stored_baselines(envelope, serial=SERIAL, require_envelope=True)
+    restored = validate_stored_baselines(envelope, serial=SERIAL)
     assert restored["uncertain_command"]["desired"] == data["uncertain_command"]["desired"]
 
 
@@ -160,7 +158,7 @@ def test_uncertain_display_command_survives_validation(section: str) -> None:
     [
         {"fan": {"mode": 3, "workingPerHour": 40}},
         {"fan": {"mode": 1, "workingPerHour": 9}},
-        {"fan": {"mode": 1, "workingPerHour": 40}, "hold_period": "2: Forever"},
+        {"fan": {"mode": 1, "workingPerHour": 40}, "hold_period": "2: UntilChanged"},
         {"fan": {"mode": 1, "workingPerHour": 40}, "temp": 22.0},
     ],
 )
@@ -180,7 +178,7 @@ def test_uncertain_fan_command_rejects_unproven_state(desired: dict[str, Any]) -
     )
 
     with pytest.raises(NuveProtocolError, match="uncertain fan"):
-        validate_stored_baselines(envelope, serial=SERIAL, require_envelope=True)
+        validate_stored_baselines(envelope, serial=SERIAL)
 
 
 class _UnderlyingStore:

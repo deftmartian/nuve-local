@@ -1,7 +1,4 @@
 """Climate entity for locally confirmed Nuve Samo state and control."""
-# pyright: reportIncompatibleVariableOverride=false
-# HA entity descriptors use cached_property and instance attributes while
-# integrations conventionally override them with properties and class attrs.
 
 from __future__ import annotations
 

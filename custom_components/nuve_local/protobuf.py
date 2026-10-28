@@ -238,7 +238,5 @@ def decode_monitor_payload(payload: bytes, *, received_at: datetime) -> NuveStat
         # as 0/1/2/3/8/9. Values 4..7 are not named wire states.
         schedule_type=enum_int(19, frozenset({0, 1, 2, 3, 8, 9})),
         monitor_is_sync=is_sync,
-        raw_fixed32=fixed32,
-        raw_varints=varints,
         records_received=len(records),
     )

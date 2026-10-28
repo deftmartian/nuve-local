@@ -1,7 +1,4 @@
 """Sensor entities for Nuve Local."""
-# pyright: reportIncompatibleVariableOverride=false
-# HA entity descriptors use cached_property while integrations override them
-# with ordinary properties and narrower entity-description subclasses.
 
 from __future__ import annotations
 
@@ -128,33 +125,6 @@ def _wifi_strength(runtime: NuveRuntime) -> str | None:
     )
     value = system.get("wifiStrength") if isinstance(system, dict) else None
     return value if isinstance(value, str) and value else None
-
-
-SYSTEM_SENSOR_FIELDS = frozenset(
-    {
-        "type",
-        "coolStage",
-        "heatStage",
-        "heatPumpOBState",
-        "systemRunDelay",
-        "dualFuelThreshold",
-        "dualFuelManualHeating",
-        "dualFuelHeatingModeDefault",
-        "emergencyMinimumTime",
-        "turnAuxOnUnreaching",
-        "tempCorrection",
-        "overcool",
-        "diffToEngageAux",
-        "heat_dissipation_time",
-        "cool_dissipation_time",
-        "systemAccessories",
-        "heat_deadband",
-        "cool_deadband",
-        "aux_lockout_threshold",
-        "heat_min_on_time",
-        "cool_min_on_time",
-    }
-)
 
 
 def _system_sensor(

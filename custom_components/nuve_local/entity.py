@@ -1,7 +1,4 @@
 """Base entity for Nuve Local."""
-# pyright: reportIncompatibleVariableOverride=false
-# HA's available descriptor is a cached_property; integrations conventionally
-# override it with an ordinary property.
 
 from __future__ import annotations
 

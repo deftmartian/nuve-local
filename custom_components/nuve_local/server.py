@@ -99,7 +99,7 @@ class NuveApiServer:
         entry: ConfigEntry,
         runtime: NuveRuntime,
         config: dict[str, Any],
-        baseline_store: NuveBaselineStore | None = None,
+        baseline_store: NuveBaselineStore,
         contractor_logo_bytes: bytes | None = None,
     ) -> None:
         self._hass = hass
@@ -114,8 +114,7 @@ class NuveApiServer:
         self._contractor_logo_bytes = contractor_logo_bytes
         configured_hostname = str(config[CONF_API_HOSTNAME]).lower().rstrip(".")
         self._expected_hosts = {configured_hostname}
-        if baseline_store is not None:
-            runtime.async_set_persistence_listener(self.async_save_candidate)
+        runtime.async_set_persistence_listener(self.async_save_candidate)
 
     @property
     def is_running(self) -> bool:
@@ -284,11 +283,6 @@ class NuveApiServer:
 
     async def _root(self, request: web.Request) -> web.Response:
         return web.json_response({"success": True, "status": "ok", "connected": True})
-
-    async def _empty_sync(self, request: web.Request) -> web.Response:
-        # Captures prove these polling paths but not their command schema. Returning
-        # an empty data object avoids fabricating a thermostat configuration.
-        return web.json_response(_devapi_success_payload({}))
 
     async def _get_contractor_info(self, request: web.Request) -> web.Response:
         """Return the exact stock metadata/download contract when explicitly configured."""
@@ -565,25 +559,6 @@ class NuveApiServer:
             raise web.HTTPBadRequest(text="malformed event payload") from err
         return web.json_response(_devapi_success_payload({}))
 
-    async def _async_save_baselines(self) -> None:
-        """Persist only device-originated or telemetry-confirmed snapshots."""
-
-        async with self._runtime.persistence_lock:
-            await self._async_save_baselines_unlocked()
-
-    async def _async_save_baselines_unlocked(self) -> None:
-        """Persist while the caller owns the baseline serialization lock."""
-
-        if self._baseline_store is not None:
-            await self._baseline_store.async_save(self._runtime.persistent_baselines())
-
-    async def _async_save_candidate(self, candidate: dict[str, Any]) -> None:
-        """Persist a prepared full upload before mutating the live runtime."""
-
-        if self._baseline_store is None:
-            raise RuntimeError("Nuve baseline persistence is unavailable")
-        await self._baseline_store.async_save(candidate)
-
     async def _persist_and_commit(
         self,
         candidate: dict[str, Any],
@@ -601,12 +576,7 @@ class NuveApiServer:
     async def async_save_candidate(self, candidate: dict[str, Any]) -> None:
         """Persist one coordinator-locked candidate for the runtime."""
 
-        await self._async_save_candidate(candidate)
-
-    async def async_save_baselines(self) -> None:
-        """Persist runtime state at command and shutdown boundaries."""
-
-        await self._async_save_baselines()
+        await self._baseline_store.async_save(candidate)
 
     async def _monitor_report(self, request: web.Request) -> web.Response:
         body = await self._json_object(request)

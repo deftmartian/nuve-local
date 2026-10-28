@@ -177,7 +177,7 @@ class ValidatingBaselineStore:
             previous=self.previous,
             saved_at=datetime.now(UTC),
         )
-        validate_stored_baselines(envelope, serial=SERIAL, require_envelope=True)
+        validate_stored_baselines(envelope, serial=SERIAL)
         self.saved.append(data)
         self.previous = envelope
 

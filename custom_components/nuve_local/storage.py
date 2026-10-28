@@ -19,8 +19,6 @@ from .const import (
     BACKLIGHT_KEYS,
     DOMAIN,
     FAN_MODE_IDS,
-    HOLD_PERIOD_NAMES,
-    HOLD_TYPE_IDS,
     MAX_FAN_WORKING_PER_HOUR,
     MIN_FAN_WORKING_PER_HOUR,
 )
@@ -92,13 +90,13 @@ class NuveBaselineStore:
             return {"persistence_fault": True}
 
         try:
-            restored = validate_stored_baselines(raw, serial=serial, require_envelope=True)
+            restored = validate_stored_baselines(raw, serial=serial)
         except NuveProtocolError as err:
             previous = raw.get("previous_good")
             try:
                 if not isinstance(previous, dict):
                     raise NuveProtocolError("no previous-good baseline is available")
-                restored = validate_stored_baselines(previous, serial=serial, require_envelope=True)
+                restored = validate_stored_baselines(previous, serial=serial)
             except NuveProtocolError as previous_err:
                 _LOGGER.error(
                     "Nuve baseline storage and its recovery copy are invalid (%s; %s)",
@@ -126,7 +124,7 @@ class NuveBaselineStore:
         )
         # Validate the exact bytes-to-be-persisted before replacing the previous
         # recoverable copy. Store itself performs the atomic filesystem replace.
-        validated = validate_stored_baselines(envelope, serial=self._serial, require_envelope=True)
+        validated = validate_stored_baselines(envelope, serial=self._serial)
         for key in ("settings", "auto_mode", "uncertain_command"):
             if key in data and key not in validated:
                 raise NuveProtocolError(f"prepared {key} did not survive storage validation")
@@ -151,42 +149,20 @@ class NuveBaselineStore:
             envelope
         ):
             raise NuveProtocolError("Nuve baseline storage commit could not be verified")
-        validate_stored_baselines(committed, serial=self._serial, require_envelope=True)
         self._last_good_envelope = envelope
 
 
-def validate_stored_baselines(
-    raw: Any, *, serial: str, require_envelope: bool = False
-) -> StoredBaselines:
+def validate_stored_baselines(raw: Any, *, serial: str) -> StoredBaselines:
     """Return only complete baseline/revision pairs that still match the device."""
 
     if raw is None:
         return {}
     if not isinstance(raw, dict):
-        if require_envelope:
-            raise NuveProtocolError("Nuve baseline storage is not an object")
-        return {"persistence_fault": True}
-
+        raise NuveProtocolError("Nuve baseline storage is not an object")
     try:
         return _validate_current_envelope(raw, serial=serial)
     except (NuveProtocolError, ValueError) as err:
-        if require_envelope:
-            raise NuveProtocolError(f"Nuve baseline storage validation failed: {err}") from err
-        previous = raw.get("previous_good")
-        try:
-            if not isinstance(previous, dict):
-                raise NuveProtocolError("no previous-good baseline is available")
-            restored = _validate_current_envelope(previous, serial=serial)
-            restored["recovered_from_previous"] = True
-        except (NuveProtocolError, ValueError) as previous_err:
-            _LOGGER.warning(
-                "Ignoring invalid persisted Nuve baselines (%s); recovery copy also failed (%s)",
-                err,
-                previous_err,
-            )
-            return {"persistence_fault": True}
-        _LOGGER.warning("Recovered Nuve baselines from the previous-good copy after: %s", err)
-        return restored
+        raise NuveProtocolError(f"Nuve baseline storage validation failed: {err}") from err
 
 
 def _validate_current_envelope(raw: dict[str, Any], *, serial: str) -> StoredBaselines:
@@ -567,9 +543,9 @@ def _validate_uncertain_device_settings_desired(value: Any) -> None:
 
 
 def _validate_uncertain_fan_desired(desired: dict[str, Any]) -> None:
-    """Validate the exact fan command and optional schedule-hold companion."""
+    """Validate the exact fan command."""
 
-    if not set(desired).issubset({"fan", "hold_period"}):
+    if not set(desired).issubset({"fan"}):
         raise NuveProtocolError("uncertain fan command contains unsupported fields")
     fan = desired.get("fan")
     if not isinstance(fan, dict) or set(fan) != {"mode", "workingPerHour"}:
@@ -585,21 +561,3 @@ def _validate_uncertain_fan_desired(desired: dict[str, Any]) -> None:
         or not MIN_FAN_WORKING_PER_HOUR <= working_per_hour <= MAX_FAN_WORKING_PER_HOUR
     ):
         raise NuveProtocolError("uncertain fan command is invalid")
-
-    hold_period = desired.get("hold_period")
-    if hold_period is None:
-        return
-    if not isinstance(hold_period, str) or not hold_period.strip():
-        raise NuveProtocolError("uncertain fan hold is invalid")
-    seen: set[int] = set()
-    for raw_pair in hold_period.split(";"):
-        parts = [part.strip() for part in raw_pair.split(":")]
-        if len(parts) != 2:
-            raise NuveProtocolError("uncertain fan hold is invalid")
-        try:
-            hold_type = int(parts[0])
-        except ValueError as err:
-            raise NuveProtocolError("uncertain fan hold is invalid") from err
-        if hold_type not in HOLD_TYPE_IDS or hold_type in seen or parts[1] not in HOLD_PERIOD_NAMES:
-            raise NuveProtocolError("uncertain fan hold is invalid")
-        seen.add(hold_type)

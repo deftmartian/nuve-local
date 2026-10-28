@@ -1,5 +1,4 @@
 """Automation-ready control of the Nuve display backlight."""
-# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 

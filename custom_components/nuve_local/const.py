@@ -110,6 +110,3 @@ TARGET_TEMPERATURE_STEP = 1.0
 FAN_MODE_IDS = frozenset({0, 1, 2})
 MIN_FAN_WORKING_PER_HOUR = 10
 MAX_FAN_WORKING_PER_HOUR = 60
-HOLD_TYPE_IDS = frozenset({1, 2, 3})
-FAN_HOLD_TYPE = 2
-HOLD_PERIOD_NAMES = frozenset({"TwoHours", "FourHours", "UntilNextActivity", "UntilChanged"})

@@ -185,13 +185,6 @@ def _string(value: Any, *, name: str) -> str:
     return value
 
 
-def _half_step(value: Any, *, name: str, low: float, high: float) -> float:
-    number = _number(value, name=name, low=low, high=high)
-    if not math.isclose(number * 2, round(number * 2), abs_tol=1e-7):
-        raise NuveProtocolError(f"{name} must use half-unit increments")
-    return number
-
-
 def _validate_device_settings(settings: dict[str, Any]) -> None:
     missing = DEVICE_SETTINGS_KEYS.difference(settings)
     if missing:

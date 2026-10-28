@@ -1,7 +1,4 @@
 """Writable, canonical Nuve fan-circulation settings."""
-# pyright: reportIncompatibleVariableOverride=false
-# HA entity descriptors use cached_property while integrations override them
-# with ordinary properties.
 
 from __future__ import annotations
 

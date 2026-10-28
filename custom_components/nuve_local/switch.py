@@ -1,5 +1,4 @@
 """Configuration switches for Nuve display and HVAC LED preferences."""
-# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 

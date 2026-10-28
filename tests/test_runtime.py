@@ -128,7 +128,6 @@ def test_monitor_updates_merge_without_erasing_prior_fields() -> None:
                 sample_time=prior,
                 target_temperature=22.0,
                 auto_temperature_low=18.0,
-                raw_varints={9: 1},
                 records_received=2,
             ),
         )
@@ -141,7 +140,6 @@ def test_monitor_updates_merge_without_erasing_prior_fields() -> None:
                 last_seen=now,
                 sample_time=now,
                 current_temperature=21.5,
-                raw_fixed32={2: 21.5},
                 records_received=3,
             )
         )
@@ -149,7 +147,6 @@ def test_monitor_updates_merge_without_erasing_prior_fields() -> None:
         assert runtime.state.current_temperature == 21.5
         assert runtime.state.target_temperature == 22.0
         assert runtime.state.auto_temperature_low == 18.0
-        assert runtime.state.raw_varints == {9: 1}
         assert runtime.state.records_received == 5
         await runtime.async_shutdown()
 
@@ -1120,7 +1117,6 @@ def test_command_timeout_distinguishes_not_delivered_from_uncertain() -> None:
         runtime = await _ready_runtime(timeout=0.01)
         persisted = attach_memory_persistence(runtime)
         runtime.last_settings_poll = None
-        runtime.last_auto_mode_poll = None
 
         # A prior poll is not authority and must not create a narrow command
         # window. Fresh canonical monitor state permits queueing; without a new
@@ -1161,7 +1157,6 @@ def test_full_monitor_sync_resets_missing_monitor_fields() -> None:
                 sample_time=prior,
                 current_temperature=21.0,
                 target_humidity=45.0,
-                raw_fixed32={3: 45.0, 4: 21.0},
             ),
         )
         attach_memory_persistence(runtime)
@@ -1174,14 +1169,12 @@ def test_full_monitor_sync_resets_missing_monitor_fields() -> None:
                 sample_time=now,
                 monitor_is_sync=True,
                 current_temperature=22.0,
-                raw_fixed32={4: 22.0},
                 records_received=1,
             )
         )
 
         assert runtime.state.current_temperature == 22.0
         assert runtime.state.target_humidity is None
-        assert runtime.state.raw_fixed32 == {4: 22.0}
         await runtime.async_shutdown()
 
     asyncio.run(scenario())
@@ -1794,7 +1787,7 @@ def test_full_monitor_cannot_clear_restored_fan_uncertainty() -> None:
         desired_fan = {"mode": 1, "workingPerHour": 40}
         source.uncertain_command = UncertainCommand(
             kind="settings",
-            desired={"fan": desired_fan, "hold_period": "2: UntilChanged"},
+            desired={"fan": desired_fan},
             delivered_at=delivered_at,
             revision="2026-08-09 22:40:14",
         )
@@ -1823,14 +1816,10 @@ def test_full_monitor_cannot_clear_restored_fan_uncertainty() -> None:
         )
 
         assert runtime.uncertain_command is not None
-        assert runtime.uncertain_command.desired == {
-            "fan": desired_fan,
-            "hold_period": "2: UntilChanged",
-        }
+        assert runtime.uncertain_command.desired == {"fan": desired_fan}
 
         upload = _settings()
         upload["fan"] = desired_fan
-        upload["hold_period"] = "2: UntilChanged"
         received_at = delivered_at + timedelta(seconds=20)
         revision, candidate = runtime.prepare_settings_snapshot(upload, received_at=received_at)
         assert "uncertain_command" not in candidate
@@ -2109,7 +2098,6 @@ def test_automatic_baseline_capture_arms_once_when_all_gates_become_ready() -> N
             if runtime.bootstrap_status == "armed":
                 break
             await asyncio.sleep(0)
-        assert runtime.automatic_bootstrap_attempted is True
         assert runtime.bootstrap_status == "armed"
         assert len(saved) == 1
 

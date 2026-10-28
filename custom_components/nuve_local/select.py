@@ -1,5 +1,4 @@
 """Configuration selects for the Nuve display."""
-# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 

@@ -7,8 +7,8 @@ from homeassistant.const import EntityCategory
 from custom_components.nuve_local.models import NuveState, NuveSystemType
 from custom_components.nuve_local.protocol import SYSTEM_SETTINGS_KEYS
 from custom_components.nuve_local.runtime import NuveRuntime
-from custom_components.nuve_local.sensor import RUNTIME_SENSORS, SENSORS, SYSTEM_SENSOR_FIELDS
-from tests.helpers import settings_upload
+from custom_components.nuve_local.sensor import RUNTIME_SENSORS, SENSORS
+from tests.helpers import SYSTEM_BINARY_SENSOR_FIELDS, SYSTEM_SENSOR_FIELDS, settings_upload
 
 
 def test_air_quality_sensor_preserves_unlabelled_firmware_categories() -> None:
@@ -74,8 +74,6 @@ def test_installer_sensors_are_complete_read_only_diagnostics() -> None:
         if description.key not in {"firmware_version", "wifi_strength"}:
             assert description.entity_registry_enabled_default is False
             assert description.entity_category == EntityCategory.DIAGNOSTIC
-
-    from custom_components.nuve_local.binary_sensor import SYSTEM_BINARY_SENSOR_FIELDS
 
     assert SYSTEM_SENSOR_FIELDS | SYSTEM_BINARY_SENSOR_FIELDS | {"wifiStrength"} == (
         SYSTEM_SETTINGS_KEYS - {"sn", "wifiName"}

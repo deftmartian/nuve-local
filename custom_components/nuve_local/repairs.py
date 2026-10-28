@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from homeassistant.helpers import issue_registry as ir
@@ -35,20 +34,13 @@ ISSUE_KINDS = frozenset(
 GRACED_ISSUES = frozenset({BASELINE_ISSUE, MONITOR_ISSUE, SCHEDULE_ISSUE})
 
 
-@dataclass(frozen=True, slots=True)
-class IssueDefinition:
-    """Stable presentation metadata for one repair family."""
-
-    severity: ir.IssueSeverity
-
-
-ISSUE_DEFINITIONS = {
-    FIRMWARE_ISSUE: IssueDefinition(ir.IssueSeverity.ERROR),
-    BASELINE_ISSUE: IssueDefinition(ir.IssueSeverity.WARNING),
-    MONITOR_ISSUE: IssueDefinition(ir.IssueSeverity.WARNING),
-    PERSISTENCE_ISSUE: IssueDefinition(ir.IssueSeverity.ERROR),
-    UNCERTAIN_ISSUE: IssueDefinition(ir.IssueSeverity.ERROR),
-    SCHEDULE_ISSUE: IssueDefinition(ir.IssueSeverity.WARNING),
+ISSUE_SEVERITIES = {
+    FIRMWARE_ISSUE: ir.IssueSeverity.ERROR,
+    BASELINE_ISSUE: ir.IssueSeverity.WARNING,
+    MONITOR_ISSUE: ir.IssueSeverity.WARNING,
+    PERSISTENCE_ISSUE: ir.IssueSeverity.ERROR,
+    UNCERTAIN_ISSUE: ir.IssueSeverity.ERROR,
+    SCHEDULE_ISSUE: ir.IssueSeverity.WARNING,
 }
 
 
@@ -186,14 +178,13 @@ class NuveRepairManager:
             self._create(kind)
 
     def _create(self, kind: str) -> None:
-        definition = ISSUE_DEFINITIONS[kind]
         ir.async_create_issue(
             self._hass,
             DOMAIN,
             issue_id(self._entry_id, kind),
             is_fixable=False,
             is_persistent=True,
-            severity=definition.severity,
+            severity=ISSUE_SEVERITIES[kind],
             translation_key=kind,
         )
         self._status[kind] = True

@@ -7,7 +7,7 @@ import logging
 import math
 from collections.abc import Callable
 from contextlib import suppress
-from datetime import UTC, datetime, timedelta
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from .const import (
@@ -171,7 +171,7 @@ def _register_outdoor_updates(
                             sensor_humidity if sensor_humidity is not None else weather_humidity
                         ),
                         weather=weather_item,
-                        observed_at=getattr(state, "last_reported", datetime.now(UTC)),
+                        observed_at=state.last_reported,
                         source="override_sensor",
                     )
                     return
@@ -191,7 +191,7 @@ def _register_outdoor_updates(
                         weather_location or state.name,
                         humidity_percent=_validated_humidity(state.attributes.get("humidity")),
                         weather=weather_item,
-                        observed_at=getattr(state, "last_reported", datetime.now(UTC)),
+                        observed_at=state.last_reported,
                         source="weather_entity",
                     )
                     return
@@ -403,7 +403,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         contractor_logo_bytes=contractor_logo_bytes,
     )
     runtime.server = server
-    runtime.async_set_persistence_listener(server.async_save_candidate)
     entry.runtime_data = runtime
     cleanups: list[Callable[[], Any]] = []
 

@@ -65,6 +65,4 @@ class NuveState:
     schedule_type: int | None = None
     settings_revision: str | None = None
     monitor_is_sync: bool = False
-    raw_fixed32: dict[int, float] = field(default_factory=dict)
-    raw_varints: dict[int, int] = field(default_factory=dict)
     records_received: int = 0

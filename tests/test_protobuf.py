@@ -111,8 +111,6 @@ def test_decode_monitor_payload_merges_incremental_records() -> None:
     assert state.heating_stage == 1
     assert state.fan_active is True
     assert state.monitor_is_sync is True
-    assert state.raw_varints[14] == 2
-    assert state.raw_varints[16] == 1
     assert state.sample_time == datetime.fromtimestamp(1_786_237_106, tz=UTC)
     assert state.last_seen == received_at
     assert state.records_received == 2
@@ -124,14 +122,13 @@ def test_decode_monitor_payload_rejects_malformed_payload(payload: bytes) -> Non
         decode_monitor_payload(payload, received_at=datetime.now(UTC))
 
 
-def test_out_of_range_promoted_value_remains_in_diagnostics() -> None:
+def test_out_of_range_promoted_value_is_dropped() -> None:
     record = _record(1_786_237_105, _field_float(5, 150.0))
     state = decode_monitor_payload(
         _field_bytes(1, record), received_at=datetime(2026, 8, 9, tzinfo=UTC)
     )
 
     assert state.current_humidity is None
-    assert state.raw_fixed32[5] == 150.0
 
 
 def test_schedule_type_promotes_only_descriptor_enum_values() -> None:
@@ -147,4 +144,3 @@ def test_schedule_type_promotes_only_descriptor_enum_values() -> None:
 
     assert valid_state.schedule_type == 8
     assert undefined_state.schedule_type is None
-    assert undefined_state.raw_varints[19] == 4

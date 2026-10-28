@@ -77,8 +77,6 @@ async def async_get_config_entry_diagnostics(
             "runtime_available": False,
         }
     state = asdict(runtime.state)
-    state.pop("raw_fixed32", None)
-    state.pop("raw_varints", None)
     for key in ("last_seen", "sample_time"):
         if state[key] is not None:
             state[key] = state[key].isoformat()
@@ -87,11 +85,9 @@ async def async_get_config_entry_diagnostics(
         "deployment": deployment,
         "state": state,
         "protocol": {
-            "trusted_proxy_configured": bool(source_config.get(CONF_TRUSTED_PROXY_IP)),
             "paired": runtime.paired,
             "settings_baseline": runtime.has_settings_baseline,
             "auto_mode_baseline": runtime.has_auto_mode_baseline,
-            "private_baseline_storage_enabled": True,
             "persistence_healthy": runtime.persistence_healthy,
             "persistence_fault_latched": runtime.persistence_fault_latched,
             "persistence_recovered_from_previous": (runtime.persistence_recovered_from_previous),

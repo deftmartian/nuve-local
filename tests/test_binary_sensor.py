@@ -7,11 +7,11 @@ from homeassistant.const import EntityCategory
 from custom_components.nuve_local.binary_sensor import (
     BINARY_SENSORS,
     RUNTIME_BINARY_SENSORS,
-    SYSTEM_BINARY_SENSOR_FIELDS,
     NuveRuntimeBinarySensor,
 )
 from custom_components.nuve_local.models import NuveState
 from custom_components.nuve_local.runtime import NuveRuntime
+from tests.helpers import SYSTEM_BINARY_SENSOR_FIELDS
 
 
 def test_binary_sensor_values_are_not_inferred() -> None:

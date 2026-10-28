@@ -34,3 +34,5 @@ max-complexity = 15
 include = ["custom_components/nuve_local"]
 pythonVersion = "3.14"
 typeCheckingMode = "basic"
+# HA entity properties are cached_property; integrations override them with plain properties.
+reportIncompatibleVariableOverride = false

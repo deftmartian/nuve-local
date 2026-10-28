@@ -428,8 +428,6 @@ def _prepare_network_config(
         prepared[CONF_PRIVATE_KEY] = ""
     elif not errors:
         prepared[CONF_TRUSTED_PROXY_IP] = ""
-    if CONF_SERIAL in prepared:
-        prepared[CONF_SERIAL] = prepared[CONF_SERIAL].strip()
     return prepared, errors
 
 

@@ -1,7 +1,4 @@
 """Binary telemetry entities for the Nuve thermostat."""
-# pyright: reportIncompatibleVariableOverride=false
-# HA entity descriptors use cached_property while integrations override them
-# with ordinary properties and narrower entity-description subclasses.
 
 from __future__ import annotations
 
@@ -46,24 +43,6 @@ def _system_bool(runtime: NuveRuntime, key: str) -> bool | None:
     )
     value = system.get(key) if isinstance(system, dict) else None
     return value if isinstance(value, bool) else None
-
-
-SYSTEM_BINARY_SENSOR_FIELDS = frozenset(
-    {
-        "heatPumpEmergency",
-        "isAUXAuto",
-        "auxiliaryHeating",
-        "useAuxiliaryParallelHeatPump",
-        "driveAux1AndETogether",
-        "driveAuxAsEmergency",
-        "runFanWithAuxiliary",
-        "thermostatControlFan",
-        "heatingControlByFurnace",
-        "compressorLockout",
-        "fanWithAccessory",
-        "aux_lockout",
-    }
-)
 
 
 def _system_binary_sensor(
@@ -137,9 +116,7 @@ RUNTIME_BINARY_SENSORS: tuple[NuveRuntimeBinarySensorDescription, ...] = (
         entity_category=EntityCategory.DIAGNOSTIC,
         entity_registry_enabled_default=False,
         always_available=True,
-        value_fn=lambda runtime: (
-            runtime.persistence_healthy and not runtime.persistence_fault_latched
-        ),
+        value_fn=lambda runtime: runtime.persistence_healthy,
     ),
     NuveRuntimeBinarySensorDescription(
         key="outdoor_temperature_fresh",

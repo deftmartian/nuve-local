@@ -1,5 +1,4 @@
 """Night-mode time controls for the Nuve display."""
-# pyright: reportIncompatibleVariableOverride=false
 
 from __future__ import annotations
 
@@ -46,10 +45,7 @@ class NuveNightModeTime(NuveEntity, TimeEntity):
         snapshot = self._runtime.settings_snapshot
         settings = snapshot.get("settings") if snapshot is not None else None
         value = settings.get(self._settings_key) if isinstance(settings, dict) else None
-        try:
-            return time.fromisoformat(value) if isinstance(value, str) else None
-        except ValueError:
-            return None
+        return time.fromisoformat(value) if isinstance(value, str) else None
 
     @property
     def available(self) -> bool:

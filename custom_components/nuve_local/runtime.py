@@ -202,7 +202,6 @@ class NuveRuntime:
     auto_mode_revision: str | None = None
     auto_revision_floor: str | None = None
     last_settings_poll: datetime | None = None
-    last_auto_mode_poll: datetime | None = None
     last_settings_upload: datetime | None = None
     last_auto_mode_upload: datetime | None = None
     live_data_command_time: str | None = None
@@ -565,23 +564,6 @@ class NuveRuntime:
 
         return self._transaction_lock
 
-    async def async_persist_and_commit(
-        self,
-        candidate: dict[str, Any],
-        commit: Callable[[], object],
-        *,
-        family: Literal["settings", "auto"] | None = None,
-    ) -> None:
-        """Persist one candidate, then expose its matching runtime transition."""
-
-        await self._async_persist_and_commit(candidate, commit, family=family)
-
-    @property
-    def automatic_bootstrap_attempted(self) -> bool:
-        """Return whether this runtime already started its one automatic attempt."""
-
-        return self._automatic_bootstrap_attempted
-
     def _schedule_automatic_bootstrap_if_ready(self) -> None:
         """Start at most one proven bootstrap window when every gate is ready."""
 
@@ -680,7 +662,7 @@ class NuveRuntime:
             raise PersistenceUnavailableError from err
         self._trace_elapsed_event("persistence", started_at, family=family, result="committed")
 
-    async def _async_persist_and_commit(
+    async def async_persist_and_commit(
         self,
         candidate: dict[str, Any],
         commit: Callable[[], object],
@@ -748,7 +730,7 @@ class NuveRuntime:
                 self._schedule_bootstrap_expiry(expires_at)
                 self._notify_listeners()
 
-            await self._async_persist_and_commit(candidate, commit)
+            await self.async_persist_and_commit(candidate, commit)
 
     def _bootstrap_active(self, now: datetime) -> bool:
         return (
@@ -783,7 +765,7 @@ class NuveRuntime:
                 self._clear_bootstrap(cancel_timer=False)
                 self._notify_listeners()
 
-            await self._async_persist_and_commit(candidate, commit)
+            await self.async_persist_and_commit(candidate, commit)
 
     async def _async_clear_expired_bootstrap_locked(self, now: datetime) -> None:
         """Remove an expired durable journal while the transaction lock is held."""
@@ -801,7 +783,7 @@ class NuveRuntime:
             self._clear_bootstrap()
             self._notify_listeners()
 
-        await self._async_persist_and_commit(candidate, commit)
+        await self.async_persist_and_commit(candidate, commit)
 
     def _clear_bootstrap(self, *, cancel_timer: bool = True) -> None:
         if cancel_timer and self._bootstrap_timer is not None:
@@ -926,16 +908,6 @@ class NuveRuntime:
         monitor_fields, preserve_newer_temperature = self._monitor_fields(
             state, sample_time=sample_time
         )
-        raw_fixed32 = (
-            state.raw_fixed32
-            if state.monitor_is_sync
-            else {**current.raw_fixed32, **state.raw_fixed32}
-        )
-        raw_varints = (
-            state.raw_varints
-            if state.monitor_is_sync
-            else {**current.raw_varints, **state.raw_varints}
-        )
         self.async_update_state(
             replace(
                 current,
@@ -943,8 +915,6 @@ class NuveRuntime:
                 last_seen=state.last_seen or current.last_seen,
                 **monitor_fields,
                 monitor_is_sync=state.monitor_is_sync,
-                raw_fixed32=raw_fixed32,
-                raw_varints=raw_varints,
                 records_received=current.records_received + state.records_received,
             )
         )
@@ -1073,7 +1043,7 @@ class NuveRuntime:
                 self._commit_monitor_shadow(shadow, shadow_future=shadow_future)
                 self._trace_monitor_result(pending, pending_kind)
                 return
-            await self._async_persist_and_commit(
+            await self.async_persist_and_commit(
                 candidate,
                 lambda: self._commit_monitor_shadow(shadow, shadow_future=shadow_future),
             )
@@ -1590,7 +1560,7 @@ class NuveRuntime:
                         self.bootstrap_settings_served = True
                         self._notify_listeners()
 
-                    await self._async_persist_and_commit(candidate, commit_bootstrap)
+                    await self.async_persist_and_commit(candidate, commit_bootstrap)
                     return render_settings_bootstrap_response(
                         serial=self.serial,
                         revision=self.bootstrap_revision,
@@ -1634,7 +1604,7 @@ class NuveRuntime:
                         self.uncertain_command = uncertainty
                         self._notify_listeners()
 
-                    await self._async_persist_and_commit(candidate, commit_delivery)
+                    await self.async_persist_and_commit(candidate, commit_delivery)
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
@@ -1673,7 +1643,6 @@ class NuveRuntime:
         async with self._transaction_lock:
             if self.persistence_fault_latched:
                 raise PersistenceUnavailableError("canonical persistence requires reload")
-            self.last_auto_mode_poll = requested_at
             self._trace_event("poll", family="auto", result="received", at=requested_at)
             await self._async_clear_expired_bootstrap_locked(requested_at)
             # Once the settings trap has been served, its non-applying Auto
@@ -1693,7 +1662,7 @@ class NuveRuntime:
                     self.bootstrap_auto_served = True
                     self._notify_listeners()
 
-                await self._async_persist_and_commit(candidate, commit_bootstrap)
+                await self.async_persist_and_commit(candidate, commit_bootstrap)
                 return render_auto_mode_bootstrap_response(revision=self.bootstrap_revision)
             if not self.has_settings_baseline or not self.has_auto_mode_baseline:
                 return {}
@@ -1735,7 +1704,7 @@ class NuveRuntime:
                         self.uncertain_command = uncertainty
                         self._notify_listeners()
 
-                    await self._async_persist_and_commit(candidate, commit_delivery)
+                    await self.async_persist_and_commit(candidate, commit_delivery)
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
@@ -1802,7 +1771,7 @@ class NuveRuntime:
                 self.uncertain_command = uncertainty
                 self._notify_listeners()
 
-            await self._async_persist_and_commit(candidate, commit_delivery_boundary)
+            await self.async_persist_and_commit(candidate, commit_delivery_boundary)
 
         # The body may already have reached the thermostat. If any safety gate
         # changed during the send/final journal write, resolve the HA caller as
@@ -1900,8 +1869,6 @@ class NuveRuntime:
             raise RuntimeStoppedError
         if result == "not_ready":
             raise ControlNotReadyError
-        if result == "outcome_uncertain":
-            raise CommandOutcomeUncertainError
         raise CommandOutcomeUncertainError
 
     def _assert_ready(self, kind: Literal["settings", "auto"]) -> None:
@@ -2130,10 +2097,7 @@ class NuveRuntime:
     @staticmethod
     def _settings_upload_owns(desired: dict[str, Any]) -> bool:
         keys = set(desired)
-        return ("fan" in keys and keys.issubset({"fan", "hold_period"})) or keys in (
-            {"backlight"},
-            {"settings"},
-        )
+        return keys in ({"fan"}, {"backlight"}, {"settings"})
 
     def _delivered_settings_echo_changes(
         self,
@@ -2575,7 +2539,7 @@ class NuveRuntime:
         ):
             return False
         # A full monitor owns the active temperature/mode and Auto bounds, but
-        # not the configured fan mode, circulation minutes, or hold map. Those
+        # not the configured fan mode or circulation minutes. Those
         # fan fields can be resolved only by a later complete Settings upload.
         # Keep unknown future Settings fields fail-closed for the same reason.
         if uncertain.kind == "settings":
@@ -2584,9 +2548,7 @@ class NuveRuntime:
             complete_family = state.target_temperature is not None and state.mode is not None
         else:
             complete_family = (
-                uncertain.kind == "auto"
-                and state.auto_temperature_low is not None
-                and state.auto_temperature_high is not None
+                state.auto_temperature_low is not None and state.auto_temperature_high is not None
             )
         if complete_family:
             self.uncertain_command = None

@@ -43,8 +43,6 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
                 last_seen=datetime.now(UTC),
                 current_temperature=21.0,
                 mode=NuveMode.HEAT,
-                raw_fixed32={4: 21.0},
-                raw_varints={15: 2},
             ),
         )
         entry = FakeEntry(
@@ -61,8 +59,6 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
         rendered = repr(diagnostics)
         for value in secrets.values():
             assert value not in rendered
-        assert "raw_fixed32" not in diagnostics["state"]
-        assert "raw_varints" not in diagnostics["state"]
         assert diagnostics["config"] == {
             "listen_port": 18443,
             "thermostat_https_port": None,
@@ -91,7 +87,6 @@ def test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps() -> None:
         assert diagnostics["protocol"]["persistence_healthy"] is True
         assert diagnostics["protocol"]["persistence_recovered_from_previous"] is False
         assert diagnostics["protocol"]["active_repair_conditions"] == []
-        assert diagnostics["protocol"]["trusted_proxy_configured"] is True
         assert diagnostics["protocol"]["canonical_response_safe"] is False
         assert diagnostics["protocol"]["canonical_response_block_reason"] == "not_paired"
         assert diagnostics["protocol"]["canonical_live_consistency_ready"] is False

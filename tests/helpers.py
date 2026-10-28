@@ -107,3 +107,48 @@ def settings_upload(serial: str, *, firmware_version: str = "1.5.7.4") -> dict[s
         },
         "firmware": {"firmware-version": firmware_version},
     }
+
+
+# System-settings keys exposed as sensors / binary sensors (the rest are not entities).
+SYSTEM_SENSOR_FIELDS = frozenset(
+    {
+        "type",
+        "coolStage",
+        "heatStage",
+        "heatPumpOBState",
+        "systemRunDelay",
+        "dualFuelThreshold",
+        "dualFuelManualHeating",
+        "dualFuelHeatingModeDefault",
+        "emergencyMinimumTime",
+        "turnAuxOnUnreaching",
+        "tempCorrection",
+        "overcool",
+        "diffToEngageAux",
+        "heat_dissipation_time",
+        "cool_dissipation_time",
+        "systemAccessories",
+        "heat_deadband",
+        "cool_deadband",
+        "aux_lockout_threshold",
+        "heat_min_on_time",
+        "cool_min_on_time",
+    }
+)
+
+SYSTEM_BINARY_SENSOR_FIELDS = frozenset(
+    {
+        "heatPumpEmergency",
+        "isAUXAuto",
+        "auxiliaryHeating",
+        "useAuxiliaryParallelHeatPump",
+        "driveAux1AndETogether",
+        "driveAuxAsEmergency",
+        "runFanWithAuxiliary",
+        "thermostatControlFan",
+        "heatingControlByFurnace",
+        "compressorLockout",
+        "fanWithAccessory",
+        "aux_lockout",
+    }
+)
