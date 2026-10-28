@@ -16,11 +16,9 @@ Start with the page that matches your task.
 | Page | Use it for |
 | --- | --- |
 | [Firmware architecture](firmware-architecture.md) | State flow, HVAC logic, telemetry, hardware ownership, and updates |
-| [Firmware evidence](firmware-evidence.md) | Protocol behavior and the analysis behind supported controls |
+| [Firmware evidence](firmware-evidence.md) | Protocol behavior, evidence grades, claim ledger, safety-requirement traceability, and native/QV4 inventory |
 | [Field matrix](field-matrix.md) | Every recovered field and its Home Assistant status |
 | [API catalog](api-contract-catalog.md) | All thermostat API routes and whether Nuve Local supports them |
-| [Traceability](traceability.md) | Safety requirements linked to code and tests |
-| [Evidence ledger](evidence-ledger.md) | Claim-by-claim evidence strength |
 | [Reference tests](live-validation-ledger.md) | Dated tests on the reference thermostat |
 | [Version differences](version-differences.md) | What can and cannot be carried between firmware builds |
 | [Open questions](remaining-unknowns.md) | Unknowns, impact, and evidence needed to answer them |
@@ -45,6 +43,5 @@ Start with the page that matches your task.
 | Page | Inventory |
 | --- | --- |
 | [Artifact inventory](artifact-inventory.md) | Private corpus metadata and hashes |
-| [Function inventory](function-inventory.md) | Native and QV4 structural coverage |
 | [UI action register](ui-action-register.md) | Every recognized QML event handler |
 | [Hardware and bus map](hardware-bus-map.md) | Components, buses, GPIOs, watchdogs, and electrical unknowns |

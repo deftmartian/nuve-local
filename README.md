@@ -150,7 +150,6 @@ controller layout. Deeper references include:
 - [Firmware evidence](docs/firmware-evidence.md)
 - [API catalog](docs/api-contract-catalog.md)
 - [Hardware and bus map](docs/hardware-bus-map.md)
-- [Evidence ledger](docs/evidence-ledger.md)
 - [Open questions](docs/remaining-unknowns.md)
 
 Raw firmware, captures, password verifiers, device identifiers, and household

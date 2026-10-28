@@ -12,7 +12,7 @@ controllers handle HVAC and sensor-side hardware over UART.
 The structural review covers all 1,955 first-party executable functions and 1,128
 recognized QV4 event handlers. That establishes coverage, not full semantic
 understanding of every helper. Counts and reproduction details are in
-[Function inventory](function-inventory.md) and
+[Function inventory](firmware-evidence.md#function-and-qv4-inventory) and
 [UI action register](ui-action-register.md).
 
 ## System model

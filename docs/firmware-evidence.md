@@ -23,8 +23,24 @@ to contain 1.5.7.4 under the wrong name. Relevant compiled QML is byte-identical
 between those builds, and native request/parsing paths were checked separately.
 Compatibility is still tied to each named build, never inferred as a version range.
 
-The [evidence ledger](evidence-ledger.md) records whether each claim comes from static
+The [claim ledger](#claim-ledger) below records whether each claim comes from static
 analysis, reproduction, observation, a reversible test, or remains unresolved.
+
+## Evidence grades
+
+- **A — Static analysis:** confirmed in hash-matched code, metadata, filesystems,
+  images, or the bootloader.
+- **B — Reproduced:** confirmed with an isolated parser, server, emulator, fixture,
+  or hardware model.
+- **C — Live observation:** seen on the reference thermostat without changing it.
+- **D — Reversible live test:** changed and restored on the reference thermostat.
+- **U — Unresolved:** the available information is missing, contradictory, or not
+  strong enough for the claim.
+
+Grades can be combined. A state-changing feature normally needs static analysis and
+an isolated reproduction before live testing, followed by live observation or a
+reversible test before it is supported. `U` remains until the missing artifact or
+test is identified.
 
 ## Reproducibility method
 
@@ -73,14 +89,6 @@ absolute difference of at least `0.001`. These paths disprove separate UI-versus
 calibration sources. Historical Settings observations and buffered cross-family
 delivery remain transport concerns, so Nuve Local retains observation provenance
 and never restores persisted room values as live telemetry.
-
-The broad class inventory contains 1,955 unique first-party function addresses after
-deduplicating symbol aliases. Class-prefix batches covered 1,949; a final explicit
-address pass covered the six nested lambdas whose demangled names escaped their
-owning class prefix. All 1,955 decompiled without a remaining failure after the
-disposable `SIOPacket` prototype repair described in the firmware-analysis skill.
-This measures function coverage, not proof that every path or generated QML helper
-has been semantically interpreted.
 
 ## Synchronization API
 
@@ -585,7 +593,7 @@ independent live tests below.
 
 The reference unit's disabled Vacation baseline can serialize its minimum as
 `3.888888888888889` °C, the exact conversion of 39 °F. This value appeared in a
-complete device-originated Settings upload during the v0.8 device test and
+complete device-originated Settings upload during a pre-release device test and
 is accepted at ingestion. It does not widen any Home Assistant command range or add
 Vacation control; values below that exact firmware-emitted floor still fail closed.
 
@@ -599,9 +607,9 @@ canonical snapshots confirmed both values. Uncertainty reconciled from fresh
 canonical state, persistence stayed healthy, and mode, fan, schedule, and stages
 remained unchanged. Because the unrelated drift violated the stop condition,
 temperature unit, time format, sleep-logo, and proximity writes were not attempted
-for v0.8.0.
+in that pass.
 
-The later v0.8.1 pass separated the candidates. Time format `0→1→0` and proximity
+A later pass separated the candidates. Time format `0→1→0` and proximity
 `false→true→false` each changed only their intended complete Settings field while
 Cool mode, a 22 °C target, fan On, NoSchedule, and idle stages stayed fixed. Both
 original values were restored. Sleep-logo was rejected by the first complete owner.
@@ -612,7 +620,7 @@ later canonical sample moved the target to 20 °C and activated cooling, reprodu
 the earlier unrelated-drift hazard. Celsius/raw `0` and the 22 °C target were
 restored, with both stages idle. Speaker was not repeated after its earlier failed
 owner and the reproduced drift. These outcomes qualify only time format and
-proximity for v0.8.1.
+proximity.
 
 Night-mode QML rejects equal start/end times and represents overnight intervals by
 adding 24 hours to the earlier end. Native `setNightModeSettings` stores enabled,
@@ -859,3 +867,252 @@ that page is independent of the configurable Technician Access QR path.
 This does not make a blind edit safe on a different firmware or storage state. The
 deployment guide therefore keeps device backup, route activation, and rollback as
 explicit operator boundaries.
+
+## Claim ledger
+
+| ID | Claim | Grade | Evidence | Current disposition |
+| --- | --- | --- | --- | --- |
+| ART-001 | Application and recovery archive identity | A+B | File hashes, 147-file archive ledger, 30,764-entry filesystem ledger, and a second extraction/hash run | Confirmed for firmware 1.5.8 |
+| NAT-001 | First-party native inventory includes every selected function address | A+B | 48,220 defined symbols; 1,955 unique selected first-party function addresses; all 1,955 decompile after correcting the disposable `SIOPacket` type | Address coverage is complete; behavior is assessed per subsystem |
+| QV4-001 | Embedded QV4 data is structurally decodable | A+B | Schema-4 inventory: 308 `qmlData` units, 8,988 QV4 functions, 102,236 instructions, 4,920 declarative objects, 25 enums, 2,349 properties, 108 signals, and 16,875 bindings decode with the matching Qt 6.4.0 header; private values are represented only by hashes; 1,701 direct AOT function symbols | Structural and per-function operation coverage is complete; subsystem behavior is graded separately |
+| UI-001 | Every recognized QML event handler has an owner, trigger, operation map, effect domain, consequence, and Nuve Local decision | A+B | Hash-bound QV4 inventory, public register, and fixtures: 1,128 handlers in 198 units, comprising 947 bound expressions and 181 declared callbacks | 1,115 named-effect maps, nine effect-free stubs, one read/computation-only handler, and three reviewed diagnostic indexed-state writers; all 12 constructor actions resolve to `Date`; no dynamic or indexed target remains unknown |
+| API-001 | The binary contains 38 API route strings and every route has a direct owner | A+B | Fresh raw-string count and read-only Ghidra `ListApiEndpointXrefs` run: 38/38 | Every route has an owner; contracts are assessed per route |
+| API-002 | Message ingestion, device-alert upload, mobile identity, server forget, recovery-information report, manual Wi-Fi-off acknowledgement, and command-report callback/retry paths | A+B | Native owners/callbacks and QV4 consumers plus a private-value-free API emulator and 12 fixtures | Application contracts are understood; private and destructive routes remain unsupported except the restricted command acknowledgement |
+| SET-001 | Settings envelope, field ownership, revision, command metadata, and initial-state capture | A+B+C+D | Native/QV4 paths, synthetic HTTP/runtime tests, authenticated uploads, and reversible device tests | Supported only through the existing fail-closed control path |
+| MON-001 | Protobuf monitor framing, sparse/full merge, state transition, and confirmation ordering | A+B+C+D | Embedded descriptor, parser tests, authenticated monitor records, and reversible commands | Supported only for allowlisted fields |
+| HVAC-001 | Cooling-stage thresholds and commanded fan-before-cooling relay order | A+B+C+D | `Scheme`/`Relay` paths, transition-order tests, read-only stage telemetry, and a cooling observation | Command order is confirmed; airflow is not sensed |
+| DSP-001 | Backlight model and ownership of exposed display preferences | A+B+C+D | Backlight QV4/native consumers, tests, and reversible shade and brightness changes | Only tested fields are supported |
+| WEA-001 | Current/forecast parser, card ordering, and empty design-temperature response | A+B+C | Parser/QV4 paths, deterministic fixtures, and physical page observation | Supported within validated input limits |
+| SEN-001 | Published room temperature/humidity, categorical IAQ, pressure, and relay-stage producer chains | A+B+C | TI/nRF parsing and publishers, fixtures, and redacted read-only history | Published values are understood; board algorithms remain unavailable |
+| SCH-001 | Missing/empty/non-array schedule values and Settings interaction | A+B+D | QV4 handler order, synthetic preservation tests, and the recorded active-schedule incident | Schedule writes remain disabled and Settings writes fail closed while a schedule may be active |
+| SCH-002 | V2 routes, packet schema, response coercion, controller selection, activity limit/selection, retry timers, hold bit/period semantics, unreachable-with-current-callers `HPUnknow` default, and wrong-route V2 delete retry | A+B | Exact native/meta-call owners, AppSpec enums, exhaustive QV4 caller search, isolated schedule emulator, and independent fixtures | Statically understood bounded subset; wrong-route retry is a confirmed defect and schedules remain disabled for HA control |
+| SCH-003 | V1 packet schema, Settings delivery, response id, preserve/clear behavior, id reconciliation, adjusted end boundary, overnight split, strict overlap, first-match activation gates, one-shot disable behavior including the midnight defect, destructive no-conversion migration, exact C-locale parsing, Halifax DST construction, and timezone change | A+B | Exact generic native transport, legacy/migration QV4 controllers, isolated V1 emulator, exact Qt 6.4 target-runtime probe, and independent fixtures | Core legacy application path understood; physical storage durability, vendor, and live boundaries remain U |
+| PER-001 | QtQuickStream root graph, registered schedule references, primary/recovery paths, save debounce, load fallback order, serializer blacklist, duplicate/wrong-type/dangling behavior, populated target-runtime V1/V2/hold round trip, empty-activity hold clearing, and direct truncating writer | A+B | QV4/native paths, isolated persistence emulator, networkless ARM target-runtime harness, and a private result report without device values | Structural format and representative corruption behavior understood; physical power-loss durability remains unknown |
+| LOCK-001 | Four-character local PIN gate, client prerequisite, user/master unlock, persisted state, screen-lock routes, response coercion, and retry backoff | A+B | Exact Lock/DeviceController/LockPage/UnlockPage QV4 plus native callback and isolated emulator | Core path understood but intentionally unsupported |
+| SENSOR-002 | Remote-sensor QML model, disconnected pairing UI, public/private array split, inert native hooks, edit/remove behavior, and lossy Settings projection | A+B | Exact Sensor/SensorController/Add/Pair/Info QV4, native stub and route inventories, plus isolated sensor emulator | Exact application path understood and intentionally unsupported; board radio implementation remains unavailable |
+| INST-001 | Installer model, install/address/customer/job/identity/wiring/warranty request and callback contracts, coercion, retry cadence, and persistence hazards | A+B | DeviceController/AppSpec/installer/warranty QV4, native Sync/RestApiExecutor owners and callbacks, plus an isolated installer emulator | Application path understood; Nuve Local does not expose it |
+| PERF-001 | Performance-test scheduling/jitter, eligibility, UI postpone/lock behavior, result/persistence/retry contract, timers/samples, effective targets, and relay consequences | A+B | PerfTestService/DeviceController/Scheme/Relay paths, PerfTestPopup/MainView/schedule QV4, Qt 6.4 random implementation, plus isolated performance-test and logical-relay emulators | Application path understood; Nuve Local does not expose it because it can energize normal HVAC and accessory outputs |
+| HW-001 | i.MX6 processor, memory, console, display/touch/backlight, eMMC/removable-media/Wi-Fi, PMIC, enabled/disabled buses, and application-to-secondary-controller topology | A+B | Exact-hash DTB and recovery filesystem plus complete read-only FDT parser, malformed-input/decoding tests, exact application device paths, constructor ownership, connection factories, and hash-bound installed-board photographs | Linux-side hardware topology understood; secondary board firmware and electrical design remain unavailable |
+| HW-002 | Installed `HVAC021-C2-MAIN` component identities and visible debug/bus silk | A | Six exact private photographs with a mode-600 hash manifest plus manufacturer documentation: `MCIMX6L3DVN10AC`, `NT6TL256T32BQ-60`, `MMPF0100F1AEP`, `THGBMTG5D1LBAIL`, `N52832 QFAAE1`, `AP6256 SISO`, and `NAU88C22` | Exact visible identities and labels proven; no pad ownership, voltage, continuity, debug accessibility, firmware readout, or electrical behavior is inferred |
+| BUS-001 | TI is `/dev/ttymxc3`/UART4, NRF is `/dev/ttymxc1`/UART2, both run 9600 8N1 without flow control, and HVAC/sensors cross those controller boundaries rather than direct i.MX6 GPIO/I2C | A | Exact `DeviceIOController` constructor, `createTIConnection`, `createNRF`, `UARTConnection::startConnection`, packet layout, DT aliases, and sysfs/device literals | Exact application-side bus ownership understood; physical transceivers and controller implementations remain U |
+| GPIO-001 | GPIO21 is NRF data-ready, GPIO22 is ToF/luminosity-ready, both request falling edges, and the input-direction helper incorrectly writes `/usr/local/bin` instead of `in` | A | Exact constructor/callback xrefs and literal-pool resolution in `configurePins` and `exportGPIOPin` | Firmware defect established; restart/retained-direction behavior remains unresolved and is not relied on by Nuve Local |
+| WDG-001 | TI UART heartbeat, 120-second NRF-data watchdog/heartbeat-disable chain, and i.MX6 watchdog hardware are three distinct paths | A | Exact `wtdExec`/`NRFWatchdog` native paths, DT watchdog nodes, exact systemd defaults and service unit, and recovery-root unit inventory | Linux-side behavior understood; TI-side reset effect and active SoC-watchdog policy remain U |
+| SEC-001 | Recovery-root SSH activation/directives, credential classes, host-key generation, socket-unit exposure, and empty persistent iptables rules | A+B | Recovery filesystem plus an offline security inventory that omits secrets and tests that enforce that rule | Static root posture understood; live network/config drift remains unknown and Nuve Local does not require SSH |
+| VER-001 | 1.5.7.4-to-1.5.8 binary identity, selected symbol/address changes, 38-route parity, complete QV4 unit diff, review of all four changed units, and six integration-critical byte-identical units | A+B | Both application binaries, QV4/symbol reports, Qt 6.4 translation decoder, hash-bound comparison tool that omits private values, and mismatch/diff/privacy fixtures | The changed QV4 behavior is understood: one metadata-only unit, one shared fan-control refactor with valid-boolean parity, and one documented null/default/presentation difference; native and missing-file gaps remain unknown |
+| UPD-001 | Application metadata schemas, version ordering, staging visibility, contractor/forced selection, DNS/fetch queues, notification/manual/server selection, timers and retries, plaintext serial-derived URLs, MD5 checks, preflight, origin flags, helper unit, and in-place shell-install failures | A+B | `IUpdateStrategy`/`ClientSpecificUpdateStrategy`/`UpdateManager` paths, embedded resource/unit strings, updater emulator, and 45 fixtures | Application update behavior is understood and not exposed; it has no publisher authentication or transactional rollback |
+| UPD-002 | Application-managed p4 recovery planner, cache trust, download routing, space accounting, destructive cleanup order, wget/rsync arguments, unlimited download retry, copy completion, and later p1/p2 restore boundary | A+B | `RecoveryUpdater`/`UpdateDescriptor` paths, p4 `filesInfo.json`, retained boot/root pair, recovery emulator, and 17 fixtures | Recovery-file behavior is understood and not exposed; it has no publisher authentication, transaction, or rollback |
+| BOOT-001 | Boot/update/recovery branch and write order | A+B | Exact IVT/U-Boot region, byte-identical default environment, upstream command return semantics, offline branch model | Statically understood; no boot write is exposed |
+| AUTH-001 | Application, recovery-file, and boot-partition update paths lack a cryptographic publisher-signature check | A+B | HTTP metadata/payload plus sender-selected MD5; IVT CSF pointer zero; raw zImage/ext4 payloads; U-Boot checks only file existence before `gzwrite` | Nuve Local does not expose update or recovery commands |
+| LIVE-001 | Recorded pre-release reference deployment state | C+D | [Reference-thermostat validation history](live-validation-ledger.md), authenticated observations, and restored controls | Point-in-time evidence from 2026-08-10; see LIVE-U01 for current state |
+
+## Unresolved claims that block broader support
+
+The detailed register, including overlap and resolution state, is
+[remaining-unknowns.md](remaining-unknowns.md).
+
+| ID | Missing proof | Safety relevance | Required evidence |
+| --- | --- | --- | --- |
+| SCH-U01 | Filesystem/eMMC schedule and hold behavior during power loss, vendor conflict rules, and live restoration behavior | High for Settings writes; contained by the schedule safety gate and unsupported schedule routes | Fault-injected storage matching the photographed `THGBMTG5D1LBAIL`, its EXT_CSD and power-rail behavior, vendor conflict information, and an approved reversible device test only if still needed |
+| LOCK-U01 | Server authorization, rate limits, audit, network-error parsing, brute-force resistance, and crash recovery | Medium/privacy | Isolated executor harness plus server information or an approved isolated backend test |
+| SENSOR-U01 | Secondary-firmware radio pairing, identity, calibration, battery/signal ingestion, and vendor interpretation of the literal UID/lossy location projection | High if exposed | Board firmware/vendor protocol artifact; exact application-side CRUD path is closed as SENSOR-002 |
+| INST-U01 | Vendor-server authorization, lookup correlation and rate limits, warranty transaction and rollback, and private-data audit and retention | High/privacy | Vendor information or an approved isolated service account; application-side schemas stay unsupported |
+| PERF-U01 | Vendor-side eligibility policy/result interpretation and physical TI/controller/contact/equipment behavior | Critical | Vendor documentation or service implementation plus secondary-controller firmware/schematic; no connected-HVAC test is needed or authorized |
+| BOOT-U01 | Physical identity/electrical polarity of GPIO102 and likely S7 control | Critical for reboot/recovery | Schematic or separately approved read-only physical correlation with HVAC isolated |
+| BOOT-U02 | Power-loss behavior during `gzwrite`, second-read GPIO failure behavior on hardware, and end-to-end restore result | Critical | Cloned-media/emulated boot test; never use live eMMC for proof |
+| UPD-U03 | Real unzip/rsync/systemd/process interruption, exact target-userland handling of the recovery copy's single `-n 19` argv element, filesystem durability, and power-loss outcomes after partial in-place replacement | Critical | Disposable cloned filesystem/service harness with target binaries and fault injection; never the connected thermostat |
+| HW-U01 | Exact TI-side MCU/firmware, nRF52832 firmware, physical transceivers, schematic/BOM, terminal-driver electrical design, and TI heartbeat/reset behavior | Critical for hardware claims | Exact secondary firmware and schematic/BOM; isolated donor-board instrumentation only if separately approved |
+| GPIO-U01 | GPIO21/22 exact pads/nets/pulls and fresh-boot versus already-exported behavior after the invalid direction write | Medium/availability | Schematic/kernel source plus cloned-kernel sysfs harness; no connected-HVAC fault injection |
+| NRF-U01 | Exact secondary sensor/radio implementation: sensor variants, VL53L0X-family driver/library, optical geometry, algorithms, calibration, and pairing protocol | High | nRF52832 firmware, vendor protocol, and schematic/BOM; the photographed MCU identity plus application-side packets and feature strings cannot supply it |
+| SEC-U01 | Current sockets/firewall/SSH drift, root-credential reuse beyond recovery 1.5.8 and the owned reference unit, vendor token lifecycle/authorization, and secondary-controller trust | Critical/security | Redacted per-image comparison, vendor information, cloned target boot, or approved read-only device checks; never publish verifier material or probe unrelated devices |
+| VER-U02 | Broad native-body parity, complete clean 1.5.7.4 root/update, and currently absent 1.6.1.1 application/update | High for cross-version support | Hash-bound dual-project native comparison and reacquired exact artifacts; changed QV4 units are closed in VER-001 |
+| PERSIST-U01 | Arbitrary combined nested-graph corruption, physical power-loss durability, external recovery intervention, and cross-version schema migration | High for restart recovery; representative graph/runtime behavior is already A+B and unsupported by Nuve Local | Fault-injected storage matching the photographed `THGBMTG5D1LBAIL` plus exact EXT_CSD/rail behavior; another complete exact-version artifact for migration; never the connected thermostat |
+| WDG-U01 | TI-side heartbeat/reset effect and deployed i.MX6 watchdog arming policy | High/availability | TI firmware plus a cloned target harness or an approved read-only watchdog report without private values |
+| LIVE-U01 | Present deployed state after later Home Assistant and network changes | High for present-tense live claims | Separate current-state read-only inspection; mutation manifest and explicit approval before any change |
+
+No row above is converted to supported behavior merely because its endpoint or symbol
+is known.
+
+## Requirement traceability
+
+These tables link safety requirements to firmware analysis, implementation, and tests.
+
+### Evidence status
+
+| Area | Firmware analysis | Reference-unit test | Limit |
+| --- | --- | --- | --- |
+| Settings, Auto, monitor, and restart resync | Exact endpoint owners, response handlers, monitor publisher transition, and complete symbol coverage | Repeated authenticated full uploads and fresh full monitor recovery after HA-only restarts; the release restart reached control-ready 37.7 seconds after loader discovery | Proven for the allowlisted reference firmware; restart still requires the safe two-poll transition, and a new hash requires revalidation |
+| Setpoint and HVAC mode | Native/QML setters, whole-degree Home controls, and field-owning monitor confirmation | Reversible setpoint/mode changes and physical Cool-stage observation | Proven within the exposed modes/range; vacation and emergency heat remain read-only |
+| Auto bounds | Exact Auto fetch/apply and monitor fields plus synthetic server tests | Reversible 20–23 to 20–24 to 20–23 reference-unit writes confirmed in 8.49 and 11.10 seconds while both stages stayed zero | The field-owning write path and consecutive-command fix are live-proven; bounds remain whole-degree Celsius only |
+| Fan mode and circulation | Exact enums, QML scheduled-hold gate, hold-before-fan order, later schedule application, native circulation state machine, cooling/fan arbitration, transition priorities, and full Settings save | No-schedule fan On and changed duty confirmed by a complete Settings upload; an active-schedule duty attempt applied the fan then cleared the schedule, and the original duty was restored once under NoSchedule | Basic path and the commanded-relay cooling invariant are proven; active or unknown schedule authority blocks Settings-family writes, and relay status is not airflow proof |
+| Display preferences | Backlight/BacklightPage/AppSpec/time-format QV4, native settings/night-mode/proximity consumers, complete Settings save, and field ownership | Existing display writes work; time format and proximity passed reversible tests, while sleep-logo, unit, automatic clock, and speaker did not | Time format and proximity are exposed; the other settings are not |
+| Installer/HVAC configuration | Exact complete 36-field `system` constructor, validation, and serial binding | Current complete reference-unit system baseline populated every exposed field without a device write | Semantically proven non-private values are read-only disabled diagnostics; raw enums stay raw and no installer write exists |
+| Repairs and health | Runtime safety-state ownership, persistence ordering, and schedule/monitor authority rules | Release validation checks deduplication, grace, clear, and persistent-condition behavior without creating live transient noise | Repairs describe conditions only; they never retry, restore, or broaden control authority |
+| IAQ and pressure | NRF producer scales, category thresholds, pressure publisher, and official ZMOD4410 units | Redacted 1,800.8-hour history showing populated values, cadence, and sentinels | Categorical IAQ and positive hPa pressure are proven; numeric IAQ-family transport and board calibration metadata are not |
+| Weather and forecast | Exact current/daily parsers and QML card ordering | Current and forecast page populated and corrected high-first cards visibly confirmed | Missing provider fields still fail closed rather than becoming fabricated values |
+| Contractor metadata | Exact fetch, stock logo download, Settings `qr_url`, and both QR-page bytecode paths | Replacement wordmark rendered; the photographed Contact Contractor QR correctly remained unchanged | Branding is live-proven; Settings `qr_url` belongs to a separate Technician Access popup and cannot change the Contact Contractor page |
+
+### Requirements
+
+| Requirement | Evidence | Implementation | Regression proof |
+| --- | --- | --- | --- |
+| Never invent a starting device state | Native/QML whole Settings shape and limited bootstrap bridge | `protocol.py`, `runtime.py`, `storage.py` | `test_bootstrap_responses_are_minimal_and_do_not_contain_hvac_values`, `test_explicit_bootstrap_fetch_is_replaced_by_persisted_device_upload` |
+| Preserve every installer field and serial binding | Complete 36-field system constructor | `protocol.py`, `storage.py` | `test_settings_upload_rejects_wrong_serial_missing_state_and_bad_types`, `test_storage_envelope_binds_serial_hashes_and_immutable_initial_capture` |
+| Expose installer configuration without allowing installer changes | Complete system constructor plus validated field types and enum ranges | `sensor.py`, `binary_sensor.py`; every entity is diagnostic, read-only, and disabled by default | `test_installer_sensors_are_complete_read_only_diagnostics`, `test_installer_booleans_are_disabled_read_only_diagnostics` |
+| Accept exact device-originated Fahrenheit conversion without adding command authority | Reference firmware emitted disabled-Vacation 39 °F as `3.888888888888889` °C | `const.py`, `protocol.py`; ingestion only, with Vacation still read-only | `test_settings_upload_rejects_wrong_serial_missing_state_and_bad_types` plus the Fahrenheit-derived Vacation bounds case in `test_settings_upload_validates_all_full_state_fields` |
+| Persist before acknowledging state | Full/Auto upload call graph plus revision contract | `server.py`, `storage.py` | `test_full_upload_is_not_committed_or_acknowledged_when_persistence_fails`, `test_real_auto_upload_is_projected_and_persists_before_ack` |
+| Reject pre-delivery command evidence | Exact monitor cadence and asynchronous fetch model | `runtime.py`, `server.py` | `test_pre_delivery_monitor_cannot_confirm_streamed_command`, `test_buffered_monitor_data_cannot_confirm_or_clear_a_delivered_command` |
+| Recover post-restart control authority without replaying HVAC state | Empty-command monitor-off path, non-applying chained Auto fetch, healthy five-second retry cadence, and false-to-true `push_live_data` full-packet creation | `protocol.py`, `runtime.py`, `server.py` | `test_monitor_resync_responses_never_supply_desired_hvac_state`, `test_monitor_resync_retries_delivery_and_rotates_wake_command_time`, `test_restored_baseline_uses_two_http_polls_to_force_fresh_full_monitor` |
+| Preserve a thermostat-owned schedule without target flapping, replaying schedule state, or accepting Settings or Auto writes | Exact schedule temperature projection/refusal paths; missing arrays erase; non-array `schedule2` requests activity refetch; repeated-command early return | `runtime.py`, `server.py` | `test_active_schedule_poll_uses_nonapplying_preservation_response`, `test_active_schedule_upload_does_not_replace_effective_monitor_target`, `test_settings_commands_fail_closed_while_schedule_active`, `test_auto_commands_fail_closed_without_confirmed_noschedule`, `test_settings_command_is_withdrawn_if_schedule_activates_before_fetch`, `test_auto_command_is_withdrawn_if_schedule_activates_before_fetch`, `test_settings_command_does_not_send_body_if_schedule_activates_during_persist`, `test_auto_command_does_not_send_body_if_schedule_activates_during_persist`, `test_real_http_active_schedule_poll_is_nonapplying_and_blocks_settings`, `test_real_http_auto_command_is_withdrawn_if_schedule_activates_before_fetch` |
+| Keep the HA setpoint control stable without claiming premature confirmation | HA service lifecycle plus distinct requested, confirmed, and uncertainty states | `climate.py`, `runtime.py` | `test_climate_projects_requested_temperature_until_confirmation`, `test_climate_requested_temperature_reverts_after_undelivered_timeout` |
+| Expose only the target model active in the current HVAC mode | Exact Home Assistant climate renderer prioritizes any non-null low/high range over the single setpoint | `climate.py` | `test_climate_exposes_only_the_active_mode_target_model` |
+| Permit consecutive Settings and Auto commands without accepting an echo as confirmation | Exact queued-field post-delivery echo plus newer monitor confirmation | `runtime.py` | `test_consecutive_settings_commands_keep_full_authority_after_coherent_echo`, `test_consecutive_auto_commands_keep_full_authority_after_coherent_echo`, `test_post_delivery_settings_echo_with_unrelated_drift_revokes_authority` |
+| Queue safely between thermostat Settings polls | A prior poll is not state authority; only the later authenticated fetch creates a delivery boundary | `runtime.py` | `test_command_timeout_distinguishes_not_delivered_from_uncertain` |
+| Reconcile device-second monitor time with server-subsecond delivery | Protobuf Timestamp precision plus ordered post-delivery Settings echo and monitor receipt | `runtime.py` | `test_same_second_monitor_confirms_after_coherent_post_delivery_echo`, `test_same_second_monitor_without_post_delivery_echo_remains_unconfirmed`, `test_pre_delivery_monitor_cannot_confirm_streamed_command` |
+| Report an existing uncertainty latch before generic readiness | Delivered-command safety state is more actionable than its downstream authority loss | `runtime.py`, `entity.py` | `test_uncertainty_error_wins_over_generic_readiness_failure` |
+| Report actionable safety conditions without transient repair noise | Runtime owns unsupported firmware, canonical readiness, monitor freshness, persistence, uncertainty, and schedule authority | `repairs.py`, `diagnostics.py`, `__init__.py` | `test_repair_conditions_are_actionable_and_nonoverlapping`, `test_manager_deduplicates_clears_and_applies_schedule_grace`, `test_persistence_and_uncertainty_report_even_with_control_disabled` |
+| Latch ambiguous delivery across restart | Network delivery can outlive response/journal failure | `runtime.py`, `storage.py` | `test_response_sender_disconnect_retains_write_ahead_uncertainty`, `test_uncertain_command_delivery_boundary_survives_validation` |
+| Preserve newer device changes while confirming | Sparse monitor plus whole-family command model | `runtime.py` | `test_settings_confirmation_preserves_newer_device_state_and_delivery_payload`, `test_auto_confirmation_preserves_newer_bound_and_immutable_delivery` |
+| Do not infer missing sparse monitor fields as zero | Proto3 optional descriptor and full/sparse packets | `protobuf.py`, `runtime.py` | `test_decode_monitor_payload_merges_incremental_records`, `test_full_monitor_sync_resets_missing_monitor_fields` |
+| Do not expose or roll back stale room temperature | Home/Settings/current-sensors/monitor all consume QV4 `displayCurrentTemp`; cross-family delivery can be buffered | `runtime.py`, `server.py` | `test_private_baselines_restore_without_marking_device_available`, `test_room_temperature_uses_newest_observation_across_upload_families` |
+| Do not infer idle equipment from HVAC mode alone | Output stages and fan are independent optional monitor fields | `climate.py` | `test_climate_does_not_infer_idle_from_mode_without_output_authority` |
+| Report only proven IAQ/pressure semantics | NRF producer scaling, QV4 category thresholds, ZMOD4410 official units, one-hPa publisher, and zero sentinel | `sensor.py`, `protobuf.py` | `test_air_quality_sensor_preserves_unlabelled_firmware_categories`, `test_proven_diagnostic_telemetry_has_dedicated_sensors`, `test_out_of_range_promoted_value_remains_in_diagnostics` |
+| Weather absence cannot disable basic HVAC control | Weather is a separate display/lockout fetch | `runtime.py`, `server.py` | `test_outdoor_weather_fails_closed_without_blocking_basic_hvac_control`, `test_weather_current_returns_only_observed_state_and_fails_stale` |
+| Forecast uses exact parser shape and high-first card display | Current parser, daily parser, and WeatherPage QML | `weather.py`, `server.py`, `__init__.py` | `test_daily_forecast_is_converted_sorted_deduplicated_and_bounded`, `test_firmware_forecast_cards_project_high_before_low_without_mutating_cache`, `test_setup_uses_current_override_and_caches_daily_weather` |
+| Contractor download cannot become a general unauthenticated file route | Stock downloader omits bearer header | `contractor.py`, `server.py`, `config_flow.py` | `test_contractor_metadata_uses_stock_download_contract`, `test_wrong_dimensions_or_color_mode_fail_closed` |
+| Technician Access QR override cannot corrupt bootstrap capture | QML persists Settings `qr_url`; bootstrap requires the captured current value | `config_flow.py`, `runtime.py`, `server.py` | `test_technician_access_qr_url_requires_a_safe_absolute_https_url`, `test_full_settings_upload_pairs_without_query_and_drives_exact_echo`, `test_restored_baselines_require_post_start_full_control_telemetry` |
+| Do not claim the Contact Contractor QR is configurable | Exact page bytecode reads the hard-coded serial-bound `contactContractorURL`, not Settings `qr_url` or contractor metadata `url` | UI label and documentation keep the two QR paths distinct; no unsupported write is exposed | Exhaustive exact-`1.5.8` QV4 lookup scan finds the Technician Access readers and Contact Contractor reader as separate paths |
+| UI event targets never enter Home Assistant state | Exact `event.proto`; sender deletes queued files after transport success | `protobuf.py`, `server.py` | `test_decode_event_payload_validates_records_and_returns_only_count`, `test_monitor_event_upload_is_validated_and_discarded` |
+| Fan controls preserve canonical mode, minutes, schedule authority, the pre-delivery journal, and field-owning confirmation | `FanMode`/`HoldType` Qt enums; QML hold-before-fan and later schedule-processing order; `Scheme::setFan` `0x1d6940`; monitor carries only physical fan output; full Settings save carries configured fan state | `climate.py`, `number.py`, `runtime.py`, `storage.py` | `test_real_http_fan_command_confirms_only_after_persisted_full_upload`, `test_uncertain_scheduled_fan_command_survives_validation`, `test_uncertain_fan_command_rejects_unproven_state`, `test_active_schedule_poll_uses_nonapplying_preservation_response`, `test_full_monitor_cannot_clear_restored_fan_uncertainty`, `test_fan_command_fails_closed_without_schedule_authority`, `test_settings_commands_fail_closed_while_schedule_active`, `test_climate_fan_mode_waits_for_post_delivery_settings_upload` |
+| Display controls preserve complete field ownership and remain non-optimistic | Exact backlight renderer/save QV4; native adaptive, LED, and night-mode consumers; complete Settings upload owns both preference objects | `light.py`, `number.py`, `select.py`, `switch.py`, `time.py`, `runtime.py`, `storage.py` | `test_display_controls_are_confirmed_nonoptimistic_and_hvac_preserving`, `test_display_command_rejection_revokes_authority_and_does_not_use_partial_upload`, `test_uncertain_display_command_survives_validation`, `test_real_http_backlight_command_preserves_hvac_and_confirms_after_persistence` |
+| Expose only advanced preferences that passed device tests | Handler analysis and reversible tests: time format and proximity round-tripped; speaker and sleep-logo did not apply cleanly, automatic clock applied late after rejection, and a unit change later moved the target and activated cooling | `select.py` and `switch.py` expose only time format and proximity; runtime rejects speaker, unit, sleep-logo, automatic clock, timezone, and DST | `test_display_controls_are_confirmed_nonoptimistic_and_hvac_preserving` plus `test_disqualified_advanced_preferences_remain_unexposed` |
+| A circulation-duty expiry cannot command the fan off while cooling is commanded | `Scheme::fanWork` changes only the independent request; `Relay::updateFan` forces `G` for `Y1`; both cooling stages set `Y1`; staged priorities start `G` before `Y1` and stop `Y1` before `G`; the alternative path sends one complete set | Firmware-owned; HA can change only the complete fan pair and preserves the installer `system` object | Fan entity tests assert temperature, mode, and `system` remain at baseline; exact-binary decompile and whole-text call-site scan provide the relay proof |
+| Do not expose the low-level fan-speed hardware command | `DeviceControllerCPP::setFanSpeed` `0x2586b0` is separate from Settings fan | No platform or server mapping | Field-matrix unsupported disposition plus fan command allowlist tests |
+| Diagnostics cannot disclose raw household state | Settings includes Wi-Fi, identifiers, and contractor metadata | `diagnostics.py`; allowlisted diagnostic entities | `test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps`, `test_private_settings_diagnostics_expose_firmware_and_raw_strength_only` |
+| Timing diagnostics cannot disclose protocol values | Root-cause analysis needs queue, delivery, persistence, echo, monitor, completion, block transitions, and private root-cause logging but not payloads | Size-limited `runtime.py` event trace without protocol values exposed through `diagnostics.py`; private persistence error log omits state values | `test_consecutive_auto_commands_keep_full_authority_after_coherent_echo`, `test_persistence_failure_logs_sanitized_root_cause`, `test_diagnostics_use_an_allowlist_and_drop_raw_protocol_maps` |
+| Proxy headers are trusted only across the exact configured hop | Source and Host gate contract | `auth.py`, `server.py`, `config_flow.py` | `test_forwarded_source_is_trusted_only_from_one_exact_proxy`, `test_untrusted_peer_cannot_spoof_forwarded_address` |
+
+The full field-by-field disposition is in [field-matrix.md](field-matrix.md).
+The no-schedule fan mode and duty path is live-proven. Active-schedule hardware
+evidence instead proves that whole Settings writes can clear the schedule, so the integration
+withholds that entire command family until fresh monitor state reports NoSchedule.
+The Contact Contractor QR has no proven writable API and remains unsupported.
+
+## Function and QV4 inventory
+
+This inventory measures structural coverage of the `appStherm` build above;
+decompiling a function does not fully explain it.
+
+### Native inventory
+
+`nm -C --defined-only` returns 48,220 symbol rows. The selected first-party class
+selection contains 2,172 rows, representing 2,046 unique address/name identities
+after constructor, destructor, and other linker aliases are deduplicated. Of these,
+1,955 unique addresses are executable function symbols.
+
+| Subsystem | Selected symbol rows | Unique function addresses |
+| --- | ---: | ---: |
+| Startup and state | 567 | 511 |
+| Control and HVAC | 412 | 384 |
+| Hardware and sensors | 181 | 161 |
+| API and synchronization | 324 | 291 |
+| Network | 270 | 235 |
+| Weather and UI services | 135 | 114 |
+| Update and recovery | 243 | 223 |
+| Firmware contract | 40 | 36 |
+| **Total** | **2,172** | **1,955** |
+
+Class ownership is disjoint across the subsystem rows. The function-address total
+deduplicates constructor, destructor, and other linker aliases across the complete
+selection. Third-party Qt, C++ runtime, protobuf runtime, Abseil, and generic
+library symbols are excluded from this first-party review set.
+
+Class-prefix batches covered 1,949 of the 1,955 addresses; a final explicit address
+pass covered the six nested lambdas whose demangled names escaped their owning class
+prefix. The retained Ghidra project decompiles all 1,955 addresses. The original
+`DeviceIOController::processNRFResponse` failure was caused by a one-byte imported
+`STHERM::SIOPacket` placeholder. Copy sizes and ARM argument placement show that the
+structure is `0x108` bytes. Correcting the type in a disposable copy allowed the
+function to decompile without changing the retained project.
+
+This proves address coverage, not that every branch has a final disposition.
+Externally reachable, state-changing, persistent, hardware-facing, timer, callback,
+and UI-entry functions still require an owner, contract, consequence, evidence
+grade, and decision about whether Nuve Local should expose it.
+
+### QV4 inventory
+
+The binary contains:
+
+- 308 embedded `qmlData` compiled units;
+- 8,988 QV4 function records;
+- 102,236 decoded QV4 instructions;
+- 4,920 declarative objects, 25 enums, 2,349 properties, 108 signals, and 16,875
+  binding records with private values replaced by hashes;
+- 1,701 direct native AOT function symbols; and
+- 4,095 QML-cache-related symbol rows when guards and generated support symbols are
+  included.
+
+Every unit, function record, lookup, string reference, and instruction stream
+structurally decodes with the matching Qt Declarative 6.4.0 instruction header.
+Declarative QML enums are decoded separately from the Qt 6.4 `QmlUnit` object
+records. Runtime string operands are resolved from the unit string table, and
+16-byte Qt 6.4 translation records resolve source/comment/plural semantics.
+Schema 4 retains private literal/translation values only as deterministic hashes,
+avoiding ambiguous numeric IDs without copying proprietary prose into the report.
+
+The 8,988 QV4 records and 1,701 AOT symbols are different views and must not be
+added together or treated as equivalent coverage. The former is the complete
+compiled JavaScript/QML function table; the latter is the subset for which the
+build retained direct native AOT symbols.
+
+### Reproduction
+
+Generate the native index:
+
+```bash
+uv run --frozen python \
+  .agents/skills/analyze-nuve-firmware/scripts/inventory_symbols.py \
+  /private/path/appStherm-1.5.8 --format json
+```
+
+Generate the private full QV4 index:
+
+```bash
+uv run --frozen python \
+  .agents/skills/analyze-nuve-firmware/scripts/inventory_qt6_qv4.py \
+  /private/path/appStherm-1.5.8 \
+  --instruction-header /private/path/qt-6.4.0-qv4instr_moth_p.h
+```
+
+List declarative enums, properties, signals, or literal bindings, or decode selected
+functions:
+
+```bash
+uv run --frozen python \
+  .agents/skills/analyze-nuve-firmware/scripts/dump_qt6_qv4.py \
+  /private/path/appStherm-1.5.8@<qml-data-file-offset> \
+  --instruction-header /private/path/qt-6.4.0-qv4instr_moth_p.h \
+  --list-qml-enums --list-qml-properties --list-qml-signals --list-qml-bindings
+```
+
+Generated symbol, decompile, and full QV4 reports remain private. Repository
+documentation records only counts, hashes, call anchors, and contracts that do not
+contain private values. The separately generated
+[UI action register](ui-action-register.md)
+maps 947 bound `onX` expressions and 181 declared callbacks to 198 action-bearing
+units, follows nested-closure edges, identifies nine effect-free stubs, and excludes
+script bodies and embedded prose.
+
+### Current semantic boundary
+
+Together, the native and QV4 inventories account for the application code selected
+for review. The operation summaries and UI register cover all 1,128 recognized
+handlers. High-risk behavior is assessed from its protocol and state machine, not
+from the name shown in the UI. [Open questions](remaining-unknowns.md) tracks the
+remaining gaps, especially physical
+schedule durability/vendor edges, lock/PIN server behavior, unavailable
+remote-sensor and relay-board firmware, installer/vendor service behavior,
+performance-test vendor policy and physical-controller behavior, update
+interruption, broad cross-version native parity, and unavailable secondary firmware.
+The application-side performance-test workflow is covered separately in
+[performance-test.md](performance-test.md).
