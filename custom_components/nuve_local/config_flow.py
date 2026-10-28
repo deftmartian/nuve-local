@@ -20,7 +20,12 @@ from homeassistant.config_entries import (
 )
 from homeassistant.helpers import selector
 
-from .commissioning import deployment_profile, new_pairing_deadline, pairing_window_is_open
+from .commissioning import (
+    deployment_profile,
+    new_pairing_deadline,
+    pairing_window_is_open,
+    valid_technician_url,
+)
 from .const import (
     BOOTSTRAP_FIRMWARE_ALLOWLIST,
     CONF_API_HOSTNAME,
@@ -442,11 +447,7 @@ def _validate_bootstrap_config(user_input: dict[str, Any]) -> dict[str, str]:
     if user_input.get(CONF_BOOTSTRAP_FIRMWARE_VERSION) not in BOOTSTRAP_FIRMWARE_ALLOWLIST:
         errors[CONF_BOOTSTRAP_FIRMWARE_VERSION] = "invalid_bootstrap_firmware"
     technician_url = user_input.get(CONF_BOOTSTRAP_TECHNICIAN_URL)
-    if (
-        not isinstance(technician_url, str)
-        or len(technician_url) > 2048
-        or any(ord(character) < 32 for character in technician_url)
-    ):
+    if not valid_technician_url(technician_url):
         errors[CONF_BOOTSTRAP_TECHNICIAN_URL] = "invalid_technician_url"
     temp_correction_version = user_input.get(CONF_TEMP_CORRECTION_VERSION)
     firmware_version = user_input.get(CONF_BOOTSTRAP_FIRMWARE_VERSION)

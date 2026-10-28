@@ -20,6 +20,7 @@ from .commands import (
     valid_mode_id,
     validated_command_celsius,
 )
+from .commissioning import valid_technician_url
 from .const import (
     BOOTSTRAP_FIRMWARE_ALLOWLIST,
     BOOTSTRAP_WINDOW_SECONDS,
@@ -336,7 +337,7 @@ class NuveRuntime:
             and self._pending_command is None
             and self.bootstrap_metadata_confirmed
             and self.bootstrap_no_update_confirmed
-            and self._valid_technician_url(self.bootstrap_technician_url)
+            and valid_technician_url(self.bootstrap_technician_url)
             and self.bootstrap_firmware_version in BOOTSTRAP_FIRMWARE_ALLOWLIST
         )
 
@@ -466,7 +467,7 @@ class NuveRuntime:
             return "metadata_not_confirmed"
         if not self.bootstrap_no_update_confirmed:
             return "update_state_not_confirmed"
-        if not self._valid_technician_url(self.bootstrap_technician_url):
+        if not valid_technician_url(self.bootstrap_technician_url):
             return "technician_url_invalid"
         if self.bootstrap_firmware_version not in BOOTSTRAP_FIRMWARE_ALLOWLIST:
             return "firmware_unsupported"
@@ -2597,18 +2598,10 @@ class NuveRuntime:
         self._last_traced_control_block_reason = reason
         self._trace_event("control_block_reason", result=reason)
 
-    @staticmethod
-    def _valid_technician_url(value: Any) -> bool:
-        return (
-            isinstance(value, str)
-            and len(value) <= 2048
-            and not any(ord(character) < 32 for character in value)
-        )
-
     def _effective_technician_url(self) -> str | None:
         """Use a configured QR target only after baseline capture is complete."""
 
-        if self.has_settings_baseline and self._valid_technician_url(self.contractor_url):
+        if self.has_settings_baseline and valid_technician_url(self.contractor_url):
             return self.contractor_url
         return self.bootstrap_technician_url
 

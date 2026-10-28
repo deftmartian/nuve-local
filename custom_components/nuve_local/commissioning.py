@@ -76,3 +76,13 @@ def pairing_window_is_open(config: Mapping[str, Any], *, now: datetime | None = 
     if deadline.tzinfo is None:
         return False
     return (now or datetime.now(UTC)).astimezone(UTC) <= deadline.astimezone(UTC)
+
+
+def valid_technician_url(value: Any) -> bool:
+    """Accept the stock QR target as an opaque size-limited string, possibly empty."""
+
+    return (
+        isinstance(value, str)
+        and len(value) <= 2048
+        and not any(ord(character) < 32 for character in value)
+    )
