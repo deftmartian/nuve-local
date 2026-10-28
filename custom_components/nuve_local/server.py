@@ -11,7 +11,7 @@ import math
 import ssl
 from collections.abc import Callable
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, TypeGuard
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -87,6 +87,37 @@ def _devapi_success_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Wrap one callback body in the wire envelope required by DevApiExecutor."""
 
     return {"success": True, "status": "ok", "data": data}
+
+
+def _finite_number(value: Any) -> TypeGuard[int | float]:
+    return isinstance(value, int | float) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def _forecast_today_bounds(
+    forecast: Any, *, zone: ZoneInfo | None, now: datetime
+) -> tuple[float, float] | None:
+    """Return today's forecast min/max when the first row is dated today."""
+
+    rows = forecast.get("list") if isinstance(forecast, dict) else None
+    first = rows[0] if isinstance(rows, list) and rows else None
+    if not isinstance(first, dict) or zone is None:
+        return None
+    row_temp = first.get("temp")
+    row_timestamp = first.get("dt")
+    try:
+        row_is_today = (
+            _finite_number(row_timestamp)
+            and datetime.fromtimestamp(row_timestamp, UTC).astimezone(zone).date()
+            == now.astimezone(zone).date()
+        )
+    except OSError, OverflowError, ValueError:
+        return None
+    if not row_is_today or not isinstance(row_temp, dict):
+        return None
+    low, high = row_temp.get("min"), row_temp.get("max")
+    if _finite_number(low) and _finite_number(high):
+        return float(low), float(high)
+    return None
 
 
 class NuveApiServer:
@@ -592,44 +623,17 @@ class NuveApiServer:
         now = datetime.now(UTC)
         assert self._runtime.outdoor_observed_at is not None
         try:
-            local_offset = now.astimezone(ZoneInfo(self._hass.config.time_zone)).utcoffset()
+            zone = ZoneInfo(self._hass.config.time_zone)
         except KeyError, ZoneInfoNotFoundError:
-            local_offset = None
+            zone = None
+        local_offset = now.astimezone(zone).utcoffset() if zone is not None else None
         # WeatherService consumes OpenWeather-compatible current conditions.
         # Missing numeric members silently convert to zero in Qt, so always
         # provide current-observation fallbacks for today's bounds.
         minimum = maximum = temperature_c
-        forecast = self._runtime.forecast_payload
-        if isinstance(forecast, dict):
-            rows = forecast.get("list")
-            if isinstance(rows, list) and rows:
-                first = rows[0]
-                row_temp = first.get("temp") if isinstance(first, dict) else None
-                row_timestamp = first.get("dt") if isinstance(first, dict) else None
-                try:
-                    zone = ZoneInfo(self._hass.config.time_zone)
-                    row_is_today = (
-                        isinstance(row_timestamp, int | float)
-                        and not isinstance(row_timestamp, bool)
-                        and math.isfinite(row_timestamp)
-                        and datetime.fromtimestamp(row_timestamp, UTC).astimezone(zone).date()
-                        == now.astimezone(zone).date()
-                    )
-                except KeyError, OSError, OverflowError, ValueError, ZoneInfoNotFoundError:
-                    row_is_today = False
-                if row_is_today and isinstance(row_temp, dict):
-                    candidate_min = row_temp.get("min")
-                    candidate_max = row_temp.get("max")
-                    if (
-                        isinstance(candidate_min, int | float)
-                        and not isinstance(candidate_min, bool)
-                        and math.isfinite(candidate_min)
-                        and isinstance(candidate_max, int | float)
-                        and not isinstance(candidate_max, bool)
-                        and math.isfinite(candidate_max)
-                    ):
-                        minimum = float(candidate_min)
-                        maximum = float(candidate_max)
+        bounds = _forecast_today_bounds(self._runtime.forecast_payload, zone=zone, now=now)
+        if bounds is not None:
+            minimum, maximum = bounds
         main: dict[str, Any] = {
             "temp": temperature_c,
             "temp_min": minimum,
