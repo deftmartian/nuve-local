@@ -12,6 +12,8 @@ from homeassistant.const import UnitOfTemperature
 from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
+from .const import MAX_OUTDOOR_TEMPERATURE, MIN_OUTDOOR_TEMPERATURE
+
 _CONDITION_ICONS: dict[str, tuple[str, str]] = {
     "sunny": ("01", "clear sky"),
     "clear-night": ("01", "clear sky"),
@@ -57,7 +59,14 @@ def _temperature_c(value: Any, unit: Any) -> float | None:
         )
     except TypeError, ValueError:
         return None
-    return round(converted, 2) if math.isfinite(converted) and -90 <= converted <= 65 else None
+    return (
+        round(converted, 2)
+        if (
+            math.isfinite(converted)
+            and MIN_OUTDOOR_TEMPERATURE <= converted <= MAX_OUTDOOR_TEMPERATURE
+        )
+        else None
+    )
 
 
 def _local_forecast_date(value: Any, zone: ZoneInfo) -> date | None:
@@ -156,7 +165,9 @@ def build_forecast_payload(
         return None
     now_local = (now or dt_util.now()).astimezone(zone)
     today = now_local.date()
-    current_temperature = _bounded_number(current_temperature_c, minimum=-90, maximum=65)
+    current_temperature = _bounded_number(
+        current_temperature_c, minimum=MIN_OUTDOOR_TEMPERATURE, maximum=MAX_OUTDOOR_TEMPERATURE
+    )
     current_weather = condition_weather(current_condition)
     current_humidity_value = _bounded_number(current_humidity, minimum=0, maximum=100)
     rows_by_date: dict[date, dict[str, Any]] = {}

@@ -27,9 +27,11 @@ from .const import (
     LIVENESS_TIMEOUT_SECONDS,
     MAX_AUTO_TEMPERATURE,
     MAX_DEVICE_TEMPERATURE,
+    MAX_OUTDOOR_TEMPERATURE,
     MAX_TARGET_TEMPERATURE,
     MIN_AUTO_TEMPERATURE,
     MIN_DEVICE_TEMPERATURE,
+    MIN_OUTDOOR_TEMPERATURE,
     MIN_TARGET_TEMPERATURE,
     MONITOR_FUTURE_SKEW_SECONDS,
     MONITOR_MAX_AGE_SECONDS,
@@ -2664,7 +2666,7 @@ class NuveRuntime:
         if (
             temperature_c is None
             or not math.isfinite(temperature_c)
-            or not -90 <= temperature_c <= 65
+            or not MIN_OUTDOOR_TEMPERATURE <= temperature_c <= MAX_OUTDOOR_TEMPERATURE
         ):
             self.outdoor_temperature_c = None
             self.outdoor_observed_at = None
@@ -2674,9 +2676,7 @@ class NuveRuntime:
             self.outdoor_source = "unavailable"
             self._notify_listeners()
             return
-        if humidity_percent is not None and (
-            not math.isfinite(humidity_percent) or not 0 <= humidity_percent <= 100
-        ):
+        if humidity_percent is not None and not self._valid_humidity(humidity_percent):
             humidity_percent = None
         if (
             not isinstance(weather, dict)

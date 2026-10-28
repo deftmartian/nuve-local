@@ -97,6 +97,9 @@ MIN_TARGET_TEMPERATURE = 18.0
 MAX_TARGET_TEMPERATURE = 30.0
 MIN_AUTO_TEMPERATURE = 4.0
 MAX_AUTO_TEMPERATURE = 32.0
+# Plausible outdoor observation range (Celsius) shared by every weather source.
+MIN_OUTDOOR_TEMPERATURE = -90.0
+MAX_OUTDOOR_TEMPERATURE = 65.0
 # Device-originated values can be Fahrenheit setpoints converted to repeating
 # Celsius decimals. The exact reference firmware emits a 39 F disabled-vacation
 # minimum as 3.888... C, while 90 F is about 32.22 C. Preserve those exact values

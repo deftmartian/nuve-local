@@ -29,6 +29,8 @@ from .const import (
     DEFAULT_CONTROL_ENABLED,
     FORECAST_REFRESH_MINUTES,
     FORECAST_REQUEST_TIMEOUT_SECONDS,
+    MAX_OUTDOOR_TEMPERATURE,
+    MIN_OUTDOOR_TEMPERATURE,
     PLATFORMS,
 )
 
@@ -50,7 +52,10 @@ def _validated_outdoor_temperature_c(value: Any, unit: Any) -> float:
     if not isinstance(unit, str) or not unit:
         raise ValueError("outdoor temperature is missing its unit")
     value_c = TemperatureConverter.convert(float(value), unit, UnitOfTemperature.CELSIUS)
-    if not math.isfinite(value_c) or not -90 <= value_c <= 65:
+    if (
+        not math.isfinite(value_c)
+        or not MIN_OUTDOOR_TEMPERATURE <= value_c <= MAX_OUTDOOR_TEMPERATURE
+    ):
         raise ValueError("outdoor temperature is outside the validated range")
     return value_c
 
