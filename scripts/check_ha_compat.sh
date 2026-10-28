@@ -9,8 +9,9 @@ versions=(
   "2026.7.4"
   "2026.8.1"
   "2026.9.2"
+  "2026.10.4"
 )
-# Override with: scripts/check_ha_compat.sh 2026.7.4 2026.9.2
+# Override with: scripts/check_ha_compat.sh 2026.7.4 2026.10.4
 if (($# > 0)); then
   versions=("$@")
 fi
@@ -38,7 +39,6 @@ for version in "${versions[@]}"; do
   uv pip install --python "$work/venv/bin/python" \
     "homeassistant==${version}" \
     "pytest==9.1.1" \
-    "cryptography==48.0.1" \
     "voluptuous-serialize"
   PYTHONPATH="$repo_dir" "$work/venv/bin/python" -m pytest -q --tb=line
   cleanup

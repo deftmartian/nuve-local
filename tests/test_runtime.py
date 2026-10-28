@@ -1352,7 +1352,7 @@ def test_restored_baselines_require_post_start_full_control_telemetry() -> None:
             paired=True,
             bootstrap_firmware_version="1.5.7.4",
             bootstrap_technician_url="https://contractor.invalid/preserved",
-            contractor_url="https://deftmartian.dev",
+            contractor_url="https://example.invalid",
             bootstrap_metadata_confirmed=True,
             bootstrap_no_update_confirmed=True,
             temp_correction_version=1,
@@ -1383,14 +1383,14 @@ def test_restored_baselines_require_post_start_full_control_telemetry() -> None:
         }
         assert reset["hold_period"] == {}
         assert set(reset["setting"]) == {"last_update"}
-        assert reset["qr_url"] == "https://deftmartian.dev"
+        assert reset["qr_url"] == "https://example.invalid"
 
         wake = await restored.async_get_settings_response(requested_at=now)
         assert set(wake) == set(reset)
         assert wake["hold_period"] == {}
         assert wake["setting"]["command"] == "push_live_data"
         assert wake["setting"]["command_time"] > wake["setting"]["last_update"]
-        assert wake["qr_url"] == "https://deftmartian.dev"
+        assert wake["qr_url"] == "https://example.invalid"
         auto_companion = await restored.async_get_auto_mode_response(requested_at=now)
         assert auto_companion == {
             "last_update": restored.auto_mode_revision,

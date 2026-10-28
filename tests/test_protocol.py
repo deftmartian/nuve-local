@@ -68,7 +68,7 @@ def test_monitor_resync_responses_never_supply_desired_hvac_state() -> None:
     common = {
         "serial": SERIAL,
         "revision": "2026-08-10 13:00:00",
-        "technician_url": "https://deftmartian.dev",
+        "technician_url": "https://example.invalid",
         "messages": [],
     }
     reset = render_monitor_reset_response(**common)
@@ -82,7 +82,7 @@ def test_monitor_resync_responses_never_supply_desired_hvac_state() -> None:
         assert response["hold"] is False
         assert response["hold_period"] == {}
         assert not forbidden.intersection(response)
-        assert response["qr_url"] == "https://deftmartian.dev"
+        assert response["qr_url"] == "https://example.invalid"
     assert reset["setting"] == {"last_update": "2026-08-10 13:00:00"}
     assert wake["setting"] == {
         "last_update": "2026-08-10 13:00:00",

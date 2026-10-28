@@ -1,4 +1,6 @@
 """Config and options flows for Nuve Local."""
+# pyright: reportArgumentType=false
+# HA 2026.10 aliases voluptuous to probatio at runtime; the stubs still see voluptuous.
 
 from __future__ import annotations
 

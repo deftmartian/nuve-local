@@ -7,8 +7,8 @@ import math
 from typing import Any, ClassVar
 
 from homeassistant.components.light import (
-    ATTR_BRIGHTNESS,
-    ATTR_HS_COLOR,
+    ATTR_BRIGHTNESS,  # pyright: ignore[reportPrivateImportUsage]
+    ATTR_HS_COLOR,  # pyright: ignore[reportPrivateImportUsage]
     LightEntity,
 )
 from homeassistant.components.light.const import ColorMode

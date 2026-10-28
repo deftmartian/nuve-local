@@ -446,7 +446,7 @@ def test_network_and_contractor_validation_remain_strict() -> None:
         "https://user@example.com",
         "https://example.com:not-a-port",
         "https://example.com/has a space",
-        "deftmartian.dev",
+        "example.invalid",
     ],
 )
 def test_technician_access_qr_url_requires_a_safe_absolute_https_url(value: str) -> None:

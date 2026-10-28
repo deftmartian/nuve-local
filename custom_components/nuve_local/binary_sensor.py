@@ -9,7 +9,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from homeassistant.components.binary_sensor import (
-    BinarySensorDeviceClass,
+    BinarySensorDeviceClass,  # pyright: ignore[reportPrivateImportUsage]
     BinarySensorEntity,
     BinarySensorEntityDescription,
 )
