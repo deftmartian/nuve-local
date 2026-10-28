@@ -131,9 +131,18 @@ def _validate_json(value: Any, *, path: str = "$", depth: int = 0) -> None:
     raise NuveProtocolError(f"{path} contains an unsupported value")
 
 
-def _object(value: Any, *, name: str) -> dict[str, Any]:
+def _dict(value: Any, *, name: str) -> dict[str, Any]:
+    """Return a nested object of an already walked payload."""
+
     if not isinstance(value, dict):
         raise NuveProtocolError(f"{name} must be a JSON object")
+    return value
+
+
+def _object(value: Any, *, name: str) -> dict[str, Any]:
+    """Return a top-level payload object after validating its whole JSON tree."""
+
+    value = _dict(value, name=name)
     _validate_json(value)
     return value
 
@@ -183,6 +192,11 @@ def _string(value: Any, *, name: str) -> str:
     if not isinstance(value, str):
         raise NuveProtocolError(f"{name} must be a string")
     return value
+
+
+def _co2_id(value: Any) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= 3:
+        raise NuveProtocolError("co2_id is invalid")
 
 
 def _validate_device_settings(settings: dict[str, Any]) -> None:
@@ -284,7 +298,7 @@ def _validate_system_settings(system: dict[str, Any], *, serial: str) -> None:
         _number(system[key], name=f"system.{key}", low=0.5, high=2.3)
     for key in ("heat_min_on_time", "cool_min_on_time"):
         _number(system[key], name=f"system.{key}", low=0, high=20)
-    accessories = _object(system["systemAccessories"], name="system.systemAccessories")
+    accessories = _dict(system["systemAccessories"], name="system.systemAccessories")
     if set(accessories) != {"wire", "mode"}:
         raise NuveProtocolError("system.systemAccessories has an unexpected shape")
     if accessories["wire"] not in {"T1PWRD", "T1Short", "T2PWRD", "None"}:
@@ -294,7 +308,7 @@ def _validate_system_settings(system: dict[str, Any], *, serial: str) -> None:
 
 def _validate_sensors(sensors: list[Any]) -> None:
     for index, value in enumerate(sensors):
-        sensor = _object(value, name=f"sensors[{index}]")
+        sensor = _dict(value, name=f"sensors[{index}]")
         if set(sensor) != {"name", "location", "type", "uid"}:
             raise NuveProtocolError(f"sensors[{index}] has an unexpected shape")
         _string(sensor["name"], name=f"sensors[{index}].name")
@@ -361,9 +375,7 @@ def parse_settings_upload(value: Any, *, serial: str) -> dict[str, Any]:
     _number(body["humidity"], name="humidity", low=0, high=100)
     _number_or_numeric_string(body["current_humidity"], name="current_humidity", low=0, high=100)
     _number_or_numeric_string(body["current_temp"], name="current_temp", low=-50, high=100)
-    co2_id = body["co2_id"]
-    if isinstance(co2_id, bool) or not isinstance(co2_id, int) or not 1 <= co2_id <= 3:
-        raise NuveProtocolError("co2_id is invalid")
+    _co2_id(body["co2_id"])
     if not isinstance(body["hold"], bool):
         raise NuveProtocolError("hold must be boolean")
     if not isinstance(body["hold_period"], str):
@@ -373,7 +385,7 @@ def parse_settings_upload(value: Any, *, serial: str) -> dict[str, Any]:
     if isinstance(mode, bool) or not isinstance(mode, int) or mode not in set(NuveMode):
         raise NuveProtocolError("mode_id is invalid")
 
-    fan = _object(body["fan"], name="fan")
+    fan = _dict(body["fan"], name="fan")
     fan_mode = fan.get("mode")
     if isinstance(fan_mode, bool) or not isinstance(fan_mode, int) or fan_mode not in FAN_MODE_IDS:
         raise NuveProtocolError("fan.mode is invalid")
@@ -386,7 +398,7 @@ def parse_settings_upload(value: Any, *, serial: str) -> dict[str, Any]:
         raise NuveProtocolError("fan.workingPerHour is invalid")
 
     for key in ("backlight", "settings", "system", "vacation", "firmware"):
-        _object(body[key], name=key)
+        _dict(body[key], name=key)
     _validate_device_settings(body["settings"])
     backlight = body["backlight"]
     if not {"on", "hue", "value", "shadeIndex"}.issubset(backlight):
@@ -410,16 +422,8 @@ def parse_settings_upload(value: Any, *, serial: str) -> dict[str, Any]:
     return copy.deepcopy(body)
 
 
-def parse_auto_mode_upload(value: Any, *, serial: str) -> dict[str, Any]:
-    """Validate and copy a complete ``/api/sync/autoMode`` snapshot."""
-
-    body = _object(value, name="auto-mode upload")
-    if "sn" in body and body["sn"] != serial:
-        raise NuveProtocolError("auto-mode upload serial does not match")
-    required = {"auto_temp_low", "auto_temp_high", "is_active", "mode"}
-    missing = required.difference(body)
-    if missing:
-        raise NuveProtocolError(f"auto-mode upload is missing: {', '.join(sorted(missing))}")
+def _auto_range(body: dict[str, Any]) -> tuple[float, float]:
+    """Validate the device Auto bounds and return them."""
 
     low = _number(
         body["auto_temp_low"],
@@ -435,6 +439,21 @@ def parse_auto_mode_upload(value: Any, *, serial: str) -> dict[str, Any]:
     )
     if low >= high:
         raise NuveProtocolError("auto-mode low temperature must be below high temperature")
+    return low, high
+
+
+def parse_auto_mode_upload(value: Any, *, serial: str) -> dict[str, Any]:
+    """Validate and copy a complete ``/api/sync/autoMode`` snapshot."""
+
+    body = _object(value, name="auto-mode upload")
+    if "sn" in body and body["sn"] != serial:
+        raise NuveProtocolError("auto-mode upload serial does not match")
+    required = {"auto_temp_low", "auto_temp_high", "is_active", "mode"}
+    missing = required.difference(body)
+    if missing:
+        raise NuveProtocolError(f"auto-mode upload is missing: {', '.join(sorted(missing))}")
+
+    _auto_range(body)
     if not isinstance(body["is_active"], bool):
         raise NuveProtocolError("auto-mode is_active must be boolean")
     mode = body["mode"]
@@ -457,20 +476,7 @@ def parse_auto_mode_baseline(value: Any) -> dict[str, float]:
     missing = {"auto_temp_low", "auto_temp_high"}.difference(body)
     if missing:
         raise NuveProtocolError(f"auto-mode baseline is missing: {', '.join(sorted(missing))}")
-    low = _number(
-        body["auto_temp_low"],
-        name="auto_temp_low",
-        low=MIN_DEVICE_TEMPERATURE,
-        high=MAX_DEVICE_TEMPERATURE,
-    )
-    high = _number(
-        body["auto_temp_high"],
-        name="auto_temp_high",
-        low=MIN_DEVICE_TEMPERATURE,
-        high=MAX_DEVICE_TEMPERATURE,
-    )
-    if low >= high:
-        raise NuveProtocolError("auto-mode low temperature must be below high temperature")
+    low, high = _auto_range(body)
     return {"auto_temp_low": low, "auto_temp_high": high}
 
 
@@ -500,9 +506,7 @@ def parse_current_sensors_upload(value: Any) -> dict[str, Any]:
         raise NuveProtocolError(f"current-sensors upload is missing: {', '.join(sorted(missing))}")
     _number_or_numeric_string(body["current_humidity"], name="current_humidity", low=0, high=100)
     _number_or_numeric_string(body["current_temp"], name="current_temp", low=-50, high=100)
-    co2_id = body["co2_id"]
-    if isinstance(co2_id, bool) or not isinstance(co2_id, int) or not 1 <= co2_id <= 3:
-        raise NuveProtocolError("co2_id is invalid")
+    _co2_id(body["co2_id"])
     return copy.deepcopy(body)
 
 
@@ -608,6 +612,21 @@ def render_settings_response(
     }
 
 
+def _trap_response(
+    serial: str, setting: dict[str, Any], technician_url: str, messages: list[Any]
+) -> dict[str, Any]:
+    """Build the off-schema first-handler trap envelope that applies no HVAC state."""
+
+    return {
+        "sn": serial,
+        "hold": False,
+        "hold_period": {},
+        "setting": setting,
+        "qr_url": technician_url,
+        "messages": copy.deepcopy(messages),
+    }
+
+
 def render_settings_bootstrap_response(
     *, serial: str, revision: str, technician_url: str
 ) -> dict[str, Any]:
@@ -623,14 +642,7 @@ def render_settings_bootstrap_response(
     device-originated full upload.
     """
 
-    return {
-        "sn": serial,
-        "hold": False,
-        "hold_period": {},
-        "setting": {"last_update": revision},
-        "qr_url": technician_url,
-        "messages": [],
-    }
+    return _trap_response(serial, {"last_update": revision}, technician_url, [])
 
 
 def render_monitor_wake_response(
@@ -654,18 +666,8 @@ def render_monitor_wake_response(
     fan, system, schedule, or lock value.
     """
 
-    return {
-        "sn": serial,
-        "hold": False,
-        "hold_period": {},
-        "setting": {
-            "last_update": revision,
-            "command": "push_live_data",
-            "command_time": command_time,
-        },
-        "qr_url": technician_url,
-        "messages": copy.deepcopy(messages),
-    }
+    setting = {"last_update": revision, "command": "push_live_data", "command_time": command_time}
+    return _trap_response(serial, setting, technician_url, messages)
 
 
 def render_monitor_reset_response(
@@ -685,14 +687,7 @@ def render_monitor_reset_response(
     prevents this response from applying desired thermostat state.
     """
 
-    return {
-        "sn": serial,
-        "hold": False,
-        "hold_period": {},
-        "setting": {"last_update": revision},
-        "qr_url": technician_url,
-        "messages": copy.deepcopy(messages),
-    }
+    return _trap_response(serial, {"last_update": revision}, technician_url, messages)
 
 
 def render_settings_ack(revision: str) -> dict[str, Any]:
@@ -726,14 +721,8 @@ def render_auto_mode_bootstrap_response(*, revision: str) -> dict[str, Any]:
     }
 
 
-def render_auto_mode_ack(revision: str) -> dict[str, Any]:
-    """Acknowledge an auto-mode upload."""
-
-    return {"last_update": revision}
-
-
-def render_partial_settings_ack(revision: str) -> dict[str, Any]:
-    """Acknowledge device/system partial settings uploads."""
+def render_revision_ack(revision: str) -> dict[str, Any]:
+    """Acknowledge an auto-mode or partial settings upload."""
 
     return {"last_update": revision}
 

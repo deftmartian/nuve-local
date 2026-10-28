@@ -54,9 +54,8 @@ from .protocol import (
     parse_device_settings_upload,
     parse_settings_upload,
     parse_system_settings_upload,
-    render_auto_mode_ack,
     render_current_sensors_ack,
-    render_partial_settings_ack,
+    render_revision_ack,
     render_settings_ack,
 )
 from .runtime import ControlNotReadyError, NuveRuntime, PersistenceUnavailableError
@@ -466,7 +465,7 @@ class NuveApiServer:
                 ),
                 family="auto",
             )
-        return web.json_response(_devapi_success_payload(render_auto_mode_ack(revision)))
+        return web.json_response(_devapi_success_payload(render_revision_ack(revision)))
 
     async def _update_device_settings(self, request: web.Request) -> web.Response:
         return await self._update_partial_settings(
@@ -510,7 +509,7 @@ class NuveApiServer:
                 ),
                 family="settings",
             )
-        return web.json_response(_devapi_success_payload(render_partial_settings_ack(revision)))
+        return web.json_response(_devapi_success_payload(render_revision_ack(revision)))
 
     async def _update_current_sensors(self, request: web.Request) -> web.Response:
         body = await self._json_object(request)
