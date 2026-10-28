@@ -416,13 +416,7 @@ class NuveRuntime:
     def control_ready(self) -> bool:
         """Return whether the integration can accept a new HVAC write now."""
 
-        return (
-            self.control_enabled
-            and self.can_enable_control
-            and self.schedule_authority_block_reason is None
-            and self._pending_command is None
-            and self.uncertain_command is None
-        )
+        return self.control_block_reason == "ready"
 
     @property
     def schedule_authority_block_reason(self) -> str | None:
@@ -1581,30 +1575,7 @@ class NuveRuntime:
                 if blocked is not None:
                     return blocked
                 if not pending.delivered:
-                    prior = self._latest_revision(
-                        self._latest_revision(self.settings_revision, self.settings_revision_floor),
-                        pending.revision,
-                    )
-                    revision = next_revision(prior, now=requested_at)
-                    uncertainty = UncertainCommand(
-                        kind="settings",
-                        desired=copy.deepcopy(pending.desired),
-                        delivered_at=None,
-                        revision=revision,
-                    )
-                    candidate = self.persistent_baselines()
-                    candidate["settings_revision_floor"] = revision
-                    candidate["uncertain_command"] = self._serialize_uncertainty(uncertainty)
-
-                    def commit_delivery() -> None:
-                        pending.revision = revision
-                        pending.delivered = True
-                        pending.delivered_at = None
-                        self.settings_revision_floor = revision
-                        self.uncertain_command = uncertainty
-                        self._notify_listeners()
-
-                    await self.async_persist_and_commit(candidate, commit_delivery)
+                    await self._async_journal_delivery(pending, requested_at=requested_at)
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
@@ -1681,30 +1652,7 @@ class NuveRuntime:
                 if blocked is not None:
                     return blocked
                 if not pending.delivered:
-                    prior = self._latest_revision(
-                        self._latest_revision(self.auto_mode_revision, self.auto_revision_floor),
-                        pending.revision,
-                    )
-                    revision = next_revision(prior, now=requested_at)
-                    uncertainty = UncertainCommand(
-                        kind="auto",
-                        desired=copy.deepcopy(pending.desired),
-                        delivered_at=None,
-                        revision=revision,
-                    )
-                    candidate = self.persistent_baselines()
-                    candidate["auto_revision_floor"] = revision
-                    candidate["uncertain_command"] = self._serialize_uncertainty(uncertainty)
-
-                    def commit_delivery() -> None:
-                        pending.revision = revision
-                        pending.delivered = True
-                        pending.delivered_at = None
-                        self.auto_revision_floor = revision
-                        self.uncertain_command = uncertainty
-                        self._notify_listeners()
-
-                    await self.async_persist_and_commit(candidate, commit_delivery)
+                    await self._async_journal_delivery(pending, requested_at=requested_at)
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
@@ -1720,6 +1668,39 @@ class NuveRuntime:
                     response_sender=response_sender,
                 )
             return self._canonical_auto_mode_response()
+
+    async def _async_journal_delivery(
+        self, pending: PendingCommand, *, requested_at: datetime
+    ) -> None:
+        """Persist the write-ahead uncertainty journal before a command body is sent."""
+
+        if pending.kind == "settings":
+            current, floor_key = self.settings_revision, "settings_revision_floor"
+        else:
+            current, floor_key = self.auto_mode_revision, "auto_revision_floor"
+        prior = self._latest_revision(
+            self._latest_revision(current, getattr(self, floor_key)), pending.revision
+        )
+        revision = next_revision(prior, now=requested_at)
+        uncertainty = UncertainCommand(
+            kind=pending.kind,
+            desired=copy.deepcopy(pending.desired),
+            delivered_at=None,
+            revision=revision,
+        )
+        candidate = self.persistent_baselines()
+        candidate[floor_key] = revision
+        candidate["uncertain_command"] = self._serialize_uncertainty(uncertainty)
+
+        def commit_delivery() -> None:
+            pending.revision = revision
+            pending.delivered = True
+            pending.delivered_at = None
+            setattr(self, floor_key, revision)
+            self.uncertain_command = uncertainty
+            self._notify_listeners()
+
+        await self.async_persist_and_commit(candidate, commit_delivery)
 
     async def _async_deliver_pending_response(
         self,

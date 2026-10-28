@@ -2045,6 +2045,71 @@ def test_control_block_reason_identifies_queue_and_authority_failures() -> None:
     asyncio.run(scenario())
 
 
+def _control_ready_oracle(runtime: NuveRuntime) -> bool:
+    """Independent statement of the write gate's preconditions."""
+
+    return (
+        runtime.control_enabled
+        and runtime.control_authority_block_reason is None
+        and runtime.schedule_authority_block_reason is None
+        and runtime._pending_command is None
+        and runtime.uncertain_command is None
+    )
+
+
+def test_control_ready_matches_control_block_reason_in_every_block_state() -> None:
+    async def scenario() -> None:
+        def pending(runtime: NuveRuntime, *, delivered: bool) -> None:
+            runtime._queue_command_locked("settings", {"temp": 22.0}, {"temp": 22.0})
+            assert runtime._pending_command is not None
+            runtime._pending_command.delivered = delivered
+
+        mutations = {
+            "ready": lambda r: None,
+            "control_disabled": lambda r: setattr(r, "control_enabled", False),
+            "not_paired": lambda r: setattr(r, "paired", False),
+            "persistence_fault": lambda r: r._latch_persistence_fault(),
+            "persistence_listener_missing": lambda r: setattr(r, "_persistence_listener", None),
+            "auto_baseline_missing": lambda r: setattr(r, "auto_mode_snapshot", None),
+            "monitor_authority_missing": lambda r: setattr(
+                r, "authoritative_control_monitor_seen", False
+            ),
+            "device_unavailable": lambda r: setattr(r, "state", replace(r.state, available=False)),
+            "temperature_missing": lambda r: setattr(
+                r, "state", replace(r.state, current_temperature=None)
+            ),
+            "unsupported_mode": lambda r: setattr(r, "state", replace(r.state, mode=None)),
+            "schedule_active": lambda r: setattr(r, "state", replace(r.state, schedule_type=2)),
+            "schedule_unknown": lambda r: setattr(r, "state", replace(r.state, schedule_type=None)),
+            "queued": lambda r: pending(r, delivered=False),
+            "delivered": lambda r: pending(r, delivered=True),
+            "uncertain": lambda r: setattr(
+                r,
+                "uncertain_command",
+                UncertainCommand(
+                    kind="settings", desired={"temp": 22.0}, delivered_at=None, revision="r"
+                ),
+            ),
+        }
+        reasons = set()
+        for name, mutate in mutations.items():
+            runtime = await _ready_runtime()
+            mutate(runtime)
+            reasons.add(runtime.control_block_reason)
+            assert runtime.control_ready is _control_ready_oracle(runtime), name
+            assert runtime.control_ready is (runtime.control_block_reason == "ready"), name
+            assert runtime.canonical_response_safe is (
+                runtime.canonical_response_block_reason is None
+            ), name
+            assert runtime.can_enable_control is (runtime.control_authority_block_reason is None)
+            runtime._pending_command = None
+            await runtime.async_shutdown()
+        assert "ready" in reasons
+        assert len(reasons) >= 10
+
+    asyncio.run(scenario())
+
+
 def test_expired_bootstrap_cannot_serve_either_compatibility_response() -> None:
     async def scenario() -> None:
         runtime = NuveRuntime(
