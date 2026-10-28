@@ -22,58 +22,18 @@ from custom_components.nuve_local.runtime import (
     RuntimeStoppedError,
     UncertainCommand,
 )
-from tests.helpers import attach_memory_persistence, settings_upload
+from tests.helpers import (
+    accept_auto_mode_snapshot,
+    accept_partial_settings,
+    accept_settings_snapshot,
+    attach_memory_persistence,
+    ready_runtime,
+    settings_upload,
+)
 
 
 def _settings() -> dict[str, object]:
     return settings_upload("00-000-000000")
-
-
-async def _ready_runtime(*, timeout: float = 0.2) -> NuveRuntime:
-    runtime = NuveRuntime(
-        serial="00-000-000000",
-        control_enabled=True,
-        paired=True,
-        command_timeout_seconds=timeout,
-        bootstrap_firmware_version="1.5.7.4",
-        bootstrap_technician_url="https://contractor.invalid/preserved",
-        bootstrap_metadata_confirmed=True,
-        bootstrap_no_update_confirmed=True,
-        temp_correction_version=1,
-    )
-    attach_memory_persistence(runtime)
-    now = datetime.now(UTC)
-    runtime.async_accept_settings_snapshot(_settings(), received_at=now)
-    runtime.async_accept_auto_mode_snapshot(
-        {
-            "auto_temp_low": 19.0,
-            "auto_temp_high": 23.0,
-            "is_active": False,
-            "mode": "heating",
-        },
-        received_at=now,
-    )
-    runtime.async_note_authenticated_contact(now)
-    runtime.async_set_outdoor_temperature(10.0, "Test outdoor", observed_at=now)
-    await runtime.async_process_monitor_state(
-        NuveState(
-            available=True,
-            last_seen=now,
-            sample_time=now,
-            monitor_is_sync=True,
-            current_temperature=21.2,
-            target_temperature=21.5,
-            target_humidity=40.0,
-            auto_temperature_low=19.0,
-            auto_temperature_high=23.0,
-            system_type=NuveSystemType.HEAT_PUMP,
-            mode=NuveMode.HEAT,
-            schedule_type=9,
-            records_received=1,
-        )
-    )
-    await runtime.async_get_settings_response(requested_at=now)
-    return runtime
 
 
 def test_authenticated_contact_and_expiry_notify_subscribers() -> None:
@@ -156,7 +116,7 @@ def test_monitor_updates_merge_without_erasing_prior_fields() -> None:
 def test_settings_command_retries_identically_and_waits_for_telemetry(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         original_target = runtime.state.target_temperature
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -171,7 +131,7 @@ def test_settings_command_retries_identically_and_waits_for_telemetry(monkeypatc
 
         upload = _settings()
         upload["temp"] = 22.0
-        runtime.async_accept_settings_snapshot(upload, received_at=datetime.now(UTC))
+        accept_settings_snapshot(runtime, upload, received_at=datetime.now(UTC))
         assert not command.done()
 
         await asyncio.sleep(0.002)
@@ -209,7 +169,7 @@ def test_consecutive_settings_commands_keep_full_authority_after_coherent_echo(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         prior_upload = runtime.last_settings_upload
 
         for target in (22.0, 21.0):
@@ -223,7 +183,8 @@ def test_consecutive_settings_commands_keep_full_authority_after_coherent_echo(
             upload = copy.deepcopy(runtime.settings_snapshot)
             assert upload is not None
             upload["temp"] = target
-            runtime.async_accept_settings_snapshot(
+            accept_settings_snapshot(
+                runtime,
                 upload,
                 received_at=datetime.now(UTC),
             )
@@ -258,7 +219,7 @@ def test_consecutive_auto_commands_keep_full_authority_after_coherent_echo(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         prior_upload = runtime.last_auto_mode_upload
 
         for changes in ({"auto_temp_low": 20.0}, {"auto_temp_high": 24.0}):
@@ -272,7 +233,8 @@ def test_consecutive_auto_commands_keep_full_authority_after_coherent_echo(
             upload = copy.deepcopy(runtime.auto_mode_snapshot)
             assert upload is not None
             upload.update(changes)
-            runtime.async_accept_auto_mode_snapshot(
+            accept_auto_mode_snapshot(
+                runtime,
                 {**upload, "is_active": False, "mode": "heating"},
                 received_at=datetime.now(UTC),
             )
@@ -325,7 +287,7 @@ def test_same_second_monitor_confirms_after_coherent_post_delivery_echo(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         delivered_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -340,7 +302,7 @@ def test_same_second_monitor_confirms_after_coherent_post_delivery_echo(
         upload = copy.deepcopy(runtime.settings_snapshot)
         assert upload is not None
         upload["temp"] = 22.0
-        runtime.async_accept_settings_snapshot(upload, received_at=echo_received_at)
+        accept_settings_snapshot(runtime, upload, received_at=echo_received_at)
         pending = runtime._pending_command
         assert pending is not None
         assert pending.coherent_echo_received_at == echo_received_at
@@ -371,7 +333,7 @@ def test_same_second_monitor_without_post_delivery_echo_remains_unconfirmed(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime(timeout=0.01)
+        runtime = await ready_runtime(timeout=0.01)
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         delivered_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -401,7 +363,7 @@ def test_same_second_monitor_without_post_delivery_echo_remains_unconfirmed(
 
 def test_uncertainty_error_wins_over_generic_readiness_failure() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.authoritative_control_monitor_seen = False
         runtime.uncertain_command = UncertainCommand(
             kind="settings",
@@ -421,7 +383,7 @@ def test_post_delivery_settings_echo_with_unrelated_drift_revokes_authority(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         await runtime.async_get_settings_response(requested_at=datetime.now(UTC))
@@ -432,7 +394,7 @@ def test_post_delivery_settings_echo_with_unrelated_drift_revokes_authority(
         upload["temp"] = 22.0
         upload["system"]["heat_min_on_time"] = 6.0
         changed_at = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(upload, received_at=changed_at)
+        accept_settings_snapshot(runtime, upload, received_at=changed_at)
 
         assert runtime.authoritative_control_monitor_seen is False
         assert runtime.last_settings_upload == changed_at
@@ -446,7 +408,7 @@ def test_post_delivery_settings_echo_with_unrelated_drift_revokes_authority(
 
 def test_fan_command_confirms_from_durable_post_delivery_full_settings_upload() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         desired_fan = {"mode": 1, "workingPerHour": 40}
         command = asyncio.create_task(runtime.async_request_settings_change({"fan": desired_fan}))
         await asyncio.sleep(0)
@@ -493,7 +455,7 @@ def test_settings_commands_fail_closed_while_schedule_active(
     changes: dict[str, Any],
 ) -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.state = replace(runtime.state, schedule_type=2)
 
         with pytest.raises(ControlNotReadyError):
@@ -508,7 +470,7 @@ def test_settings_commands_fail_closed_while_schedule_active(
 
 def test_settings_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         runtime.state = replace(runtime.state, schedule_type=2)
@@ -534,7 +496,7 @@ def test_settings_command_is_withdrawn_if_schedule_activates_before_fetch() -> N
 
 def test_active_schedule_poll_uses_nonapplying_preservation_response() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.state = replace(runtime.state, schedule_type=1)
         expected_command_time = runtime.live_data_command_time
 
@@ -562,7 +524,7 @@ def test_active_schedule_poll_uses_nonapplying_preservation_response() -> None:
 
 def test_active_schedule_upload_does_not_replace_effective_monitor_target() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.state = replace(
             runtime.state,
             schedule_type=1,
@@ -571,7 +533,7 @@ def test_active_schedule_upload_does_not_replace_effective_monitor_target() -> N
         upload = _settings()
         upload["temp"] = 22.0
 
-        runtime.async_accept_settings_snapshot(upload, received_at=datetime.now(UTC))
+        accept_settings_snapshot(runtime, upload, received_at=datetime.now(UTC))
 
         assert runtime.settings_snapshot is not None
         assert runtime.settings_snapshot["temp"] == 22.0
@@ -593,7 +555,7 @@ def test_active_schedule_upload_does_not_replace_effective_monitor_target() -> N
 
 def test_fan_command_fails_closed_without_schedule_authority() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.state = replace(runtime.state, schedule_type=None)
 
         with pytest.raises(ControlNotReadyError):
@@ -618,7 +580,7 @@ def test_auto_commands_fail_closed_without_confirmed_noschedule(
     reason: str,
 ) -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.state = replace(runtime.state, schedule_type=schedule_type)
 
         assert runtime.can_enable_control is True
@@ -636,7 +598,7 @@ def test_auto_commands_fail_closed_without_confirmed_noschedule(
 
 def test_auto_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(
             runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
         )
@@ -658,7 +620,7 @@ def test_auto_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
 
 def test_settings_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         original = runtime._persistence_listener
 
         async def persist_and_activate(candidate: dict[str, Any]) -> None:
@@ -691,7 +653,7 @@ def test_settings_command_does_not_send_body_if_schedule_activates_during_persis
 
 def test_auto_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         original = runtime._persistence_listener
 
         async def persist_and_activate(candidate: dict[str, Any]) -> None:
@@ -727,7 +689,7 @@ def test_auto_command_does_not_send_body_if_schedule_activates_during_persist() 
 
 def test_auto_command_succeeds_under_confirmed_noschedule() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.control_ready is True
         assert runtime.control_block_reason == "ready"
         assert runtime.schedule_authority_block_reason is None
@@ -746,7 +708,7 @@ def test_auto_command_succeeds_under_confirmed_noschedule() -> None:
             "is_active": False,
             "mode": "heating",
         }
-        runtime.async_accept_auto_mode_snapshot(upload, received_at=datetime.now(UTC))
+        accept_auto_mode_snapshot(runtime, upload, received_at=datetime.now(UTC))
         confirmed_at = datetime.now(UTC)
         await runtime.async_process_monitor_state(
             NuveState(
@@ -796,7 +758,7 @@ def test_post_queue_local_settings_change_is_rebased_instead_of_overwritten(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0.002)
         changed_at = datetime.now(UTC)
@@ -826,7 +788,7 @@ def test_post_queue_local_settings_change_is_rebased_instead_of_overwritten(
 def test_post_queue_matching_monitor_completes_without_delivery(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0.002)
         changed_at = datetime.now(UTC)
@@ -854,7 +816,7 @@ def test_post_queue_matching_monitor_completes_without_delivery(monkeypatch: Any
 def test_post_queue_matching_auto_monitor_completes_without_delivery(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
             runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
@@ -889,7 +851,7 @@ def test_nonzero_queue_skew_barrier_rejects_early_monitor_evidence(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 2)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         pending = runtime._pending_command
@@ -932,7 +894,7 @@ def test_response_sender_disconnect_retains_write_ahead_uncertainty(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime(timeout=0.05)
+        runtime = await ready_runtime(timeout=0.05)
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
 
@@ -961,7 +923,7 @@ def test_post_queue_local_auto_change_is_rebased_instead_of_overwritten(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
             runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
@@ -998,7 +960,7 @@ def test_settings_confirmation_preserves_newer_device_state_and_delivery_payload
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         delivered_at = datetime.now(UTC)
@@ -1008,7 +970,7 @@ def test_settings_confirmation_preserves_newer_device_state_and_delivery_payload
         system = dict(runtime.settings_snapshot["system"])
         system["heat_min_on_time"] = 6.0
         await asyncio.sleep(0.002)
-        runtime.async_accept_partial_settings("system", system, received_at=datetime.now(UTC))
+        accept_partial_settings(runtime, "system", system, received_at=datetime.now(UTC))
         await asyncio.sleep(0.002)
         changed_at = datetime.now(UTC)
         await runtime.async_process_monitor_state(
@@ -1052,7 +1014,7 @@ def test_auto_confirmation_preserves_newer_bound_and_immutable_delivery(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
             runtime.async_request_auto_mode_change({"auto_temp_low": 20.0})
@@ -1076,7 +1038,8 @@ def test_auto_confirmation_preserves_newer_bound_and_immutable_delivery(
         assert retry == first
 
         await asyncio.sleep(0.002)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 24.0,
@@ -1114,7 +1077,7 @@ def test_auto_confirmation_preserves_newer_bound_and_immutable_delivery(
 
 def test_command_timeout_distinguishes_not_delivered_from_uncertain() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime(timeout=0.01)
+        runtime = await ready_runtime(timeout=0.01)
         persisted = attach_memory_persistence(runtime)
         runtime.last_settings_poll = None
 
@@ -1141,7 +1104,7 @@ def test_command_timeout_distinguishes_not_delivered_from_uncertain() -> None:
         assert runtime.uncertain_outcome is True
         assert persisted[-1]["uncertain_command"]["kind"] == "settings"
 
-        runtime.async_accept_settings_snapshot(_settings(), received_at=datetime.now(UTC))
+        accept_settings_snapshot(runtime, _settings(), received_at=datetime.now(UTC))
         assert runtime.uncertain_outcome is True
         await runtime.async_shutdown()
 
@@ -1212,7 +1175,7 @@ def test_explicit_bootstrap_unlocks_fetch_without_inventing_settings() -> None:
         assert await runtime.async_get_settings_response(requested_at=now) == {}
         assert await runtime.async_get_auto_mode_response(requested_at=now) == {}
 
-        runtime.async_accept_settings_snapshot(_settings(), received_at=now + timedelta(seconds=1))
+        accept_settings_snapshot(runtime, _settings(), received_at=now + timedelta(seconds=1))
         assert runtime.bootstrap_status == "complete"
         assert runtime.has_settings_baseline
         await runtime.async_shutdown()
@@ -1222,7 +1185,7 @@ def test_explicit_bootstrap_unlocks_fetch_without_inventing_settings() -> None:
 
 def test_private_baselines_restore_without_marking_device_available() -> None:
     async def scenario() -> None:
-        source = await _ready_runtime()
+        source = await ready_runtime()
         now = datetime.now(UTC)
         await source.async_process_monitor_state(
             NuveState(
@@ -1311,7 +1274,7 @@ def test_room_temperature_uses_newest_observation_across_upload_families() -> No
 
 def test_nullable_write_ahead_uncertainty_restores_fail_closed() -> None:
     async def scenario() -> None:
-        source = await _ready_runtime()
+        source = await ready_runtime()
         persisted = source.persistent_baselines()
         persisted["uncertain_command"] = {
             "kind": "settings",
@@ -1335,7 +1298,7 @@ def test_nullable_write_ahead_uncertainty_restores_fail_closed() -> None:
 
 def test_restored_baselines_require_post_start_full_control_telemetry() -> None:
     async def scenario() -> None:
-        source = await _ready_runtime()
+        source = await ready_runtime()
         persisted = source.persistent_baselines()
         await source.async_shutdown()
 
@@ -1422,7 +1385,7 @@ def test_restored_baselines_require_post_start_full_control_telemetry() -> None:
 
 def test_monitor_resync_retries_delivery_and_rotates_wake_command_time() -> None:
     async def scenario() -> None:
-        source = await _ready_runtime()
+        source = await ready_runtime()
         persisted = source.persistent_baselines()
         await source.async_shutdown()
 
@@ -1499,8 +1462,9 @@ def test_normal_canonical_echo_requires_exact_firmware_attestations() -> None:
         )
         attach_memory_persistence(runtime)
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -1596,7 +1560,8 @@ def test_recovery_firmware_baseline_requires_exact_version_match() -> None:
         temp_correction_version=1,
     )
     attach_memory_persistence(runtime)
-    runtime.async_accept_settings_snapshot(
+    accept_settings_snapshot(
+        runtime,
         settings_upload("00-000-000000", firmware_version="1.5.8"),
         received_at=datetime.now(UTC),
     )
@@ -1658,7 +1623,7 @@ def test_recovery_firmware_baseline_requires_exact_version_match() -> None:
 )
 def test_canonical_response_block_reason_is_exact(mutation: Any, reason: str) -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         mutation(runtime)
         assert runtime.canonical_response_safe is False
         assert runtime.canonical_response_block_reason == reason
@@ -1673,7 +1638,7 @@ def test_buffered_monitor_data_cannot_confirm_or_clear_a_delivered_command(
 ) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime(timeout=0.03)
+        runtime = await ready_runtime(timeout=0.03)
         task = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         delivered_at = datetime.now(UTC)
@@ -1700,7 +1665,8 @@ def test_buffered_monitor_data_cannot_confirm_or_clear_a_delivered_command(
         assert runtime.uncertain_command.desired == {"temp": 22.0}
         assert runtime.uncertain_command.delivered_at == delivered_at
 
-        runtime.async_accept_auto_mode_snapshot(
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -1745,7 +1711,7 @@ def test_buffered_monitor_data_cannot_confirm_or_clear_a_delivered_command(
 
 def test_first_strictly_post_delivery_monitor_can_confirm_command() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         delivered_at = datetime.now(UTC)
         pending = runtime._queue_command_locked(
             "settings",
@@ -1782,7 +1748,7 @@ def test_first_strictly_post_delivery_monitor_can_confirm_command() -> None:
 
 def test_full_monitor_cannot_clear_restored_fan_uncertainty() -> None:
     async def scenario() -> None:
-        source = await _ready_runtime()
+        source = await ready_runtime()
         delivered_at = datetime.now(UTC)
         desired_fan = {"mode": 1, "workingPerHour": 40}
         source.uncertain_command = UncertainCommand(
@@ -1837,7 +1803,7 @@ def test_full_monitor_cannot_clear_restored_fan_uncertainty() -> None:
 
 def test_command_is_revalidated_when_the_thermostat_fetches_it() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         task = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
         runtime.async_update_state(replace(runtime.state, current_temperature=None))
@@ -1854,7 +1820,7 @@ def test_command_is_revalidated_when_the_thermostat_fetches_it() -> None:
 
 def test_delivery_is_suppressed_if_readiness_changes_during_persistence() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime(timeout=0.2)
+        runtime = await ready_runtime(timeout=0.2)
         persist_started = asyncio.Event()
         persist_release = asyncio.Event()
 
@@ -1885,7 +1851,7 @@ def test_delivery_is_suppressed_if_readiness_changes_during_persistence() -> Non
 
 def test_cancelled_persistence_task_latches_fault_without_committing_monitor() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.settings_snapshot is not None
         assert runtime.settings_snapshot["humidity"] == 40
 
@@ -1918,7 +1884,7 @@ def test_persistence_failure_logs_sanitized_root_cause(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
 
         async def failed_persist(candidate: dict[str, Any]) -> None:
             raise RuntimeError("verified readback failed")
@@ -1939,7 +1905,7 @@ def test_persistence_failure_logs_sanitized_root_cause(
 def test_auto_command_requires_telemetry_only_for_fields_that_changed(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         await runtime.async_request_auto_mode_change(
             {"auto_temp_low": 19.0, "auto_temp_high": 23.0}
@@ -1975,13 +1941,13 @@ def test_auto_command_requires_telemetry_only_for_fields_that_changed(monkeypatc
 
 def test_partial_device_preferences_preserve_zip_and_unknown_fields() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.settings_snapshot is not None
         runtime.settings_snapshot["settings"]["futureFirmwareField"] = {"keep": True}
         partial = dict(runtime.settings_snapshot["settings"])
         partial.pop("futureFirmwareField")
 
-        runtime.async_accept_partial_settings("settings", partial, received_at=datetime.now(UTC))
+        accept_partial_settings(runtime, "settings", partial, received_at=datetime.now(UTC))
 
         assert "zip" not in runtime.settings_snapshot["settings"]
         assert runtime.settings_snapshot["settings"]["futureFirmwareField"] == {"keep": True}
@@ -1992,7 +1958,7 @@ def test_partial_device_preferences_preserve_zip_and_unknown_fields() -> None:
 
 def test_outdoor_weather_fails_closed_without_blocking_basic_hvac_control() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         runtime.async_set_outdoor_temperature(float("nan"), "Bad sensor")
         assert runtime.outdoor_is_fresh is False
         assert runtime.can_enable_control is True
@@ -2024,7 +1990,7 @@ def test_outdoor_weather_fails_closed_without_blocking_basic_hvac_control() -> N
 
 def test_control_block_reason_identifies_queue_and_authority_failures() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime(timeout=0.01)
+        runtime = await ready_runtime(timeout=0.01)
         assert runtime.control_authority_block_reason is None
         assert runtime.control_block_reason == "ready"
 
@@ -2093,7 +2059,7 @@ def test_control_ready_matches_control_block_reason_in_every_block_state() -> No
         }
         reasons = set()
         for name, mutate in mutations.items():
-            runtime = await _ready_runtime()
+            runtime = await ready_runtime()
             mutate(runtime)
             reasons.add(runtime.control_block_reason)
             assert runtime.control_ready is _control_ready_oracle(runtime), name
@@ -2179,7 +2145,7 @@ def test_automatic_baseline_capture_arms_once_when_all_gates_become_ready() -> N
 def test_pre_delivery_monitor_cannot_confirm_streamed_command(monkeypatch: Any) -> None:
     async def scenario() -> None:
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
-        runtime = await _ready_runtime(timeout=0.5)
+        runtime = await ready_runtime(timeout=0.5)
         persisted = attach_memory_persistence(runtime)
         sender_started = asyncio.Event()
         sender_release = asyncio.Event()
@@ -2241,7 +2207,7 @@ def test_pre_delivery_monitor_cannot_confirm_streamed_command(monkeypatch: Any) 
 
 def test_invalid_monitor_auto_pair_never_becomes_canonical() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         persisted = attach_memory_persistence(runtime)
         assert runtime.auto_mode_snapshot == {
             "auto_temp_low": 19.0,
@@ -2297,7 +2263,7 @@ def test_invalid_monitor_auto_pair_never_becomes_canonical() -> None:
 
 def test_full_monitor_rebases_humidity_and_checks_equipment_type() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         await asyncio.sleep(0.002)
         changed_at = datetime.now(UTC)
         await runtime.async_process_monitor_state(
@@ -2367,7 +2333,7 @@ def test_full_monitor_rebases_humidity_and_checks_equipment_type() -> None:
 
 def test_full_settings_get_echo_preserves_live_monitor_authority() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.settings_snapshot is not None
         assert runtime.authoritative_control_monitor_seen is True
         assert runtime.can_enable_control is True
@@ -2382,7 +2348,7 @@ def test_full_settings_get_echo_preserves_live_monitor_authority() -> None:
         echo["current_humidity"] = "41.5"
         echo["co2_id"] = 2
         echo["system"]["wifiStrength"] = "73"
-        runtime.async_accept_settings_snapshot(echo, received_at=datetime.now(UTC))
+        accept_settings_snapshot(runtime, echo, received_at=datetime.now(UTC))
 
         assert runtime.authoritative_control_monitor_seen is True
         assert runtime.last_settings_upload == prior_upload
@@ -2391,7 +2357,7 @@ def test_full_settings_get_echo_preserves_live_monitor_authority() -> None:
         changed = copy.deepcopy(echo)
         changed["system"]["heat_min_on_time"] = 1.0
         changed_at = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(changed, received_at=changed_at)
+        accept_settings_snapshot(runtime, changed, received_at=changed_at)
 
         assert runtime.authoritative_control_monitor_seen is False
         assert runtime.last_settings_upload == changed_at
@@ -2487,7 +2453,7 @@ def test_every_settings_control_field_change_revokes_monitor_authority(
     path: tuple[str, ...], changed_value: object
 ) -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.settings_snapshot is not None
         changed = copy.deepcopy(runtime.settings_snapshot)
         target: dict[str, Any] = changed
@@ -2496,7 +2462,7 @@ def test_every_settings_control_field_change_revokes_monitor_authority(
         target[path[-1]] = changed_value
 
         changed_at = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(changed, received_at=changed_at)
+        accept_settings_snapshot(runtime, changed, received_at=changed_at)
 
         assert runtime.authoritative_control_monitor_seen is False
         assert runtime.last_settings_upload == changed_at
@@ -2508,12 +2474,13 @@ def test_every_settings_control_field_change_revokes_monitor_authority(
 
 def test_auto_get_echo_preserves_live_monitor_authority() -> None:
     async def scenario() -> None:
-        runtime = await _ready_runtime()
+        runtime = await ready_runtime()
         assert runtime.authoritative_control_monitor_seen is True
         assert runtime.can_enable_control is True
         prior_upload = runtime.last_auto_mode_upload
 
-        runtime.async_accept_auto_mode_snapshot(
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -2528,7 +2495,8 @@ def test_auto_get_echo_preserves_live_monitor_authority() -> None:
         assert runtime.can_enable_control is True
 
         changed_at = datetime.now(UTC)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 24.0,

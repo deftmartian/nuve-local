@@ -501,11 +501,7 @@ class NuveApiServer:
             await self._persist_and_commit(
                 candidate,
                 lambda: self._runtime.async_accept_partial_settings(
-                    section,
-                    snapshot,
-                    received_at=received_at,
-                    prepared_snapshot=full,
-                    prepared_revision=revision,
+                    full, prepared_revision=revision
                 ),
                 family="settings",
             )

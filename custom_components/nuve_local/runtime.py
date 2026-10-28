@@ -1034,14 +1034,14 @@ class NuveRuntime:
         snapshot: dict[str, Any],
         *,
         received_at: datetime,
-        prepared_revision: str | None = None,
+        prepared_revision: str,
     ) -> str:
         """Store a complete device-originated settings snapshot and return its ack revision."""
 
         incoming = copy.deepcopy(snapshot)
         pending = self._pending_command
         settings_result = self._settings_owned_upload_result(incoming, received_at)
-        revision = prepared_revision or self._settings_snapshot_revision(incoming, received_at)
+        revision = prepared_revision
         permitted_changes = self._delivered_echo_changes(
             "settings",
             incoming,
@@ -1108,7 +1108,7 @@ class NuveRuntime:
         snapshot: dict[str, Any],
         *,
         received_at: datetime,
-        prepared_revision: str | None = None,
+        prepared_revision: str,
     ) -> str:
         """Store a complete device-originated auto-mode snapshot and return its ack revision."""
 
@@ -1118,7 +1118,7 @@ class NuveRuntime:
         # for runtime state, monitor-derived baselines, hashing, and restore.
         incoming = parse_auto_mode_baseline(snapshot)
         pending = self._pending_command
-        revision = prepared_revision or self._auto_snapshot_revision(incoming, received_at)
+        revision = prepared_revision
         permitted_changes = self._delivered_echo_changes(
             "auto",
             incoming,
@@ -1214,29 +1214,17 @@ class NuveRuntime:
         return next_revision(prior, now=received_at)
 
     def async_accept_partial_settings(
-        self,
-        section: Literal["settings", "system"],
-        snapshot: dict[str, Any],
-        *,
-        received_at: datetime,
-        prepared_snapshot: dict[str, Any] | None = None,
-        prepared_revision: str | None = None,
+        self, prepared_snapshot: dict[str, Any], *, prepared_revision: str
     ) -> str:
-        """Merge a complete device-preferences or HVAC-system subsection."""
+        """Commit a prepared device-preferences or HVAC-system merge."""
 
-        if prepared_snapshot is None or prepared_revision is None:
-            revision, _, prepared_snapshot = self.prepare_partial_settings(
-                section, snapshot, received_at=received_at
-            )
-        else:
-            revision = prepared_revision
+        revision = prepared_revision
         self.settings_snapshot = copy.deepcopy(prepared_snapshot)
         self.settings_revision = revision
         self.settings_revision_floor = self._latest_revision(self.settings_revision_floor, revision)
         pending = self._pending_command
         if pending is not None and pending.kind == "settings" and not pending.delivered:
             pending.payload = self._command_payload(self.settings_snapshot, pending.desired)
-        self.settings_revision = revision
         self.async_update_state(replace(self.state, settings_revision=revision))
         return revision
 

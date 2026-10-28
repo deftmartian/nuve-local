@@ -34,7 +34,7 @@ from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemT
 from custom_components.nuve_local.runtime import ControlNotReadyError, NuveRuntime
 from custom_components.nuve_local.server import NuveApiServer
 from custom_components.nuve_local.storage import _build_storage_envelope, validate_stored_baselines
-from tests.helpers import settings_upload
+from tests.helpers import accept_auto_mode_snapshot, accept_settings_snapshot, settings_upload
 
 SERIAL = "00-000-000000"
 TOKEN = "a" * 64
@@ -657,8 +657,9 @@ def test_restored_baseline_uses_two_http_polls_to_force_fresh_full_monitor() -> 
     async def scenario() -> None:
         source = NuveRuntime(serial=SERIAL)
         now = datetime.now(UTC)
-        source.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        source.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(source, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            source,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -765,8 +766,9 @@ def test_real_http_command_delivery_journals_then_confirms(monkeypatch: Any) -> 
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
         runtime.paired = True
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -838,8 +840,9 @@ def test_real_http_fan_command_confirms_only_after_persisted_full_upload() -> No
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
         runtime.paired = True
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -909,8 +912,9 @@ def test_real_http_active_schedule_poll_is_nonapplying_and_blocks_settings() -> 
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
         runtime.paired = True
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -983,8 +987,9 @@ def test_real_http_auto_command_is_withdrawn_if_schedule_activates_before_fetch(
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
         runtime.paired = True
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -1038,8 +1043,9 @@ def test_real_http_auto_command_delivers_under_confirmed_noschedule() -> None:
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
         runtime.paired = True
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -1095,8 +1101,9 @@ def test_real_http_backlight_command_preserves_hvac_and_confirms_after_persisten
         runtime.paired = True
         now = datetime.now(UTC)
         baseline = _settings_upload()
-        runtime.async_accept_settings_snapshot(baseline, received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, baseline, received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,
@@ -1175,8 +1182,9 @@ def test_real_http_final_boundary_failure_returns_sent_body_and_latches_control(
         runtime.paired = True
         runtime.command_timeout_seconds = 0.05
         now = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(_settings_upload(), received_at=now)
-        runtime.async_accept_auto_mode_snapshot(
+        accept_settings_snapshot(runtime, _settings_upload(), received_at=now)
+        accept_auto_mode_snapshot(
+            runtime,
             {
                 "auto_temp_low": 19.0,
                 "auto_temp_high": 23.0,

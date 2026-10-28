@@ -13,7 +13,6 @@ from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_HS_COLOR
 from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.nuve_local.light import FIXED_SHADE_HUE, NuveDisplayBacklight
-from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
 from custom_components.nuve_local.number import NuveDisplayBrightness
 from custom_components.nuve_local.runtime import (
     ControlNotReadyError,
@@ -31,54 +30,11 @@ from custom_components.nuve_local.switch import (
     NuveProximityDetection,
 )
 from custom_components.nuve_local.time import NuveNightModeTime
-from tests.helpers import attach_memory_persistence, settings_upload
-
-
-async def _runtime() -> NuveRuntime:
-    runtime = NuveRuntime(
-        serial="00-000-000000",
-        control_enabled=True,
-        paired=True,
-        command_timeout_seconds=0.2,
-        bootstrap_firmware_version="1.5.8",
-        bootstrap_technician_url="https://contractor.invalid/preserved",
-        bootstrap_metadata_confirmed=True,
-        bootstrap_no_update_confirmed=True,
-        temp_correction_version=2,
-    )
-    attach_memory_persistence(runtime)
-    now = datetime.now(UTC)
-    settings = settings_upload(runtime.serial, firmware_version="1.5.8")
-    runtime.async_accept_settings_snapshot(settings, received_at=now)
-    runtime.async_accept_auto_mode_snapshot(
-        {
-            "auto_temp_low": 19.0,
-            "auto_temp_high": 23.0,
-            "is_active": False,
-            "mode": "heating",
-        },
-        received_at=now,
-    )
-    runtime.async_set_outdoor_temperature(10.0, "Test outdoor", observed_at=now)
-    await runtime.async_process_monitor_state(
-        NuveState(
-            available=True,
-            last_seen=now,
-            sample_time=now,
-            monitor_is_sync=True,
-            current_temperature=21.0,
-            target_temperature=21.5,
-            target_humidity=40.0,
-            auto_temperature_low=19.0,
-            auto_temperature_high=23.0,
-            system_type=NuveSystemType.HEAT_PUMP,
-            mode=NuveMode.HEAT,
-            schedule_type=9,
-            records_received=1,
-        )
-    )
-    await runtime.async_get_settings_response(requested_at=now)
-    return runtime
+from tests.helpers import (
+    accept_settings_snapshot,
+    ready_runtime_158,
+    settings_upload,
+)
 
 
 async def _deliver_and_confirm(
@@ -132,7 +88,7 @@ async def _deliver_and_confirm(
 
 def test_display_controls_are_confirmed_nonoptimistic_and_hvac_preserving() -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         light = NuveDisplayBacklight(runtime)
         brightness = NuveDisplayBrightness(runtime)
         brightness_mode = NuveBrightnessMode(runtime)
@@ -198,7 +154,7 @@ def test_display_controls_are_confirmed_nonoptimistic_and_hvac_preserving() -> N
 
 def test_display_command_rejection_revokes_authority_and_does_not_use_partial_upload() -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         command = asyncio.create_task(
             runtime.async_request_settings_change({"settings": {"brightness": 75}})
         )
@@ -212,13 +168,7 @@ def test_display_command_rejection_revokes_authority_and_does_not_use_partial_up
         revision, candidate, merged = runtime.prepare_partial_settings(
             "settings", partial, received_at=partial_at
         )
-        runtime.async_accept_partial_settings(
-            "settings",
-            partial,
-            received_at=partial_at,
-            prepared_snapshot=merged,
-            prepared_revision=revision,
-        )
+        runtime.async_accept_partial_settings(merged, prepared_revision=revision)
         assert candidate["settings"]["settings"]["brightness"] == 75
         assert not command.done()
         assert runtime.uncertain_command is not None
@@ -226,7 +176,7 @@ def test_display_command_rejection_revokes_authority_and_does_not_use_partial_up
         await asyncio.sleep(0.002)
         rejected = settings_upload(runtime.serial, firmware_version="1.5.8")
         rejected_at = datetime.now(UTC)
-        runtime.async_accept_settings_snapshot(rejected, received_at=rejected_at)
+        accept_settings_snapshot(runtime, rejected, received_at=rejected_at)
 
         with pytest.raises(ControlStateChangedError):
             await command
@@ -241,7 +191,7 @@ def test_display_command_rejection_revokes_authority_and_does_not_use_partial_up
 @pytest.mark.parametrize("value", [-1, 1.5, 101, float("nan")])
 def test_display_brightness_rejects_invalid_values(value: float) -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         with pytest.raises(ServiceValidationError):
             await NuveDisplayBrightness(runtime).async_set_native_value(value)
         await runtime.async_shutdown()
@@ -261,7 +211,7 @@ def test_display_brightness_rejects_invalid_values(value: float) -> None:
 )
 def test_display_backlight_rejects_invalid_values(kwargs: dict[str, object]) -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         with pytest.raises(ServiceValidationError):
             await NuveDisplayBacklight(runtime).async_turn_on(**kwargs)
         await runtime.async_shutdown()
@@ -271,7 +221,7 @@ def test_display_backlight_rejects_invalid_values(kwargs: dict[str, object]) -> 
 
 def test_night_mode_time_rejects_subminute_and_timezone_values() -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         entity = NuveNightModeTime(runtime, start=True)
         with pytest.raises(ServiceValidationError):
             await entity.async_set_value(time(22, 0, 1))
@@ -284,7 +234,7 @@ def test_night_mode_time_rejects_subminute_and_timezone_values() -> None:
 
 def test_night_mode_rejects_equal_boundaries_across_firmware_time_formats() -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         with pytest.raises(ControlNotReadyError):
             await runtime.async_request_settings_change({"settings": {"nightModeStart": "06:00"}})
         await runtime.async_shutdown()
@@ -307,7 +257,7 @@ def test_disqualified_advanced_preferences_remain_unexposed(
     settings: dict[str, object],
 ) -> None:
     async def scenario() -> None:
-        runtime = await _runtime()
+        runtime = await ready_runtime_158()
         with pytest.raises(ControlNotReadyError):
             await runtime.async_request_settings_change({"settings": settings})
         await runtime.async_shutdown()
