@@ -12,13 +12,10 @@ import pytest
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_HS_COLOR
 from homeassistant.exceptions import ServiceValidationError
 
+from custom_components.nuve_local.errors import ControlNotReadyError, ControlStateChangedError
 from custom_components.nuve_local.light import FIXED_SHADE_HUE, NuveDisplayBacklight
 from custom_components.nuve_local.number import NuveDisplayBrightness
-from custom_components.nuve_local.runtime import (
-    ControlNotReadyError,
-    ControlStateChangedError,
-    NuveRuntime,
-)
+from custom_components.nuve_local.runtime import NuveRuntime
 from custom_components.nuve_local.select import (
     NuveBacklightShade,
     NuveBrightnessMode,

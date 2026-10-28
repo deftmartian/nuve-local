@@ -14,7 +14,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .entity import NuveEntity
-from .runtime import ControlNotReadyError, NuveRuntime
+from .errors import ControlNotReadyError
+from .runtime import NuveRuntime
 
 
 async def async_setup_entry(

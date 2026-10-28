@@ -11,17 +11,17 @@ from typing import Any
 import pytest
 
 import custom_components.nuve_local.runtime as runtime_module
-from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
-from custom_components.nuve_local.runtime import (
+from custom_components.nuve_local.commands import validated_auto_changes, validated_settings_changes
+from custom_components.nuve_local.errors import (
     CommandOutcomeUncertainError,
     CommandTimeoutError,
     ControlNotReadyError,
     ControlStateChangedError,
-    NuveRuntime,
     PersistenceUnavailableError,
     RuntimeStoppedError,
-    UncertainCommand,
 )
+from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
+from custom_components.nuve_local.runtime import NuveRuntime, UncertainCommand
 from tests.helpers import (
     accept_auto_mode_snapshot,
     accept_partial_settings,
@@ -743,14 +743,14 @@ def test_fan_command_rejects_values_outside_exact_firmware_contract(
     fan: dict[str, object],
 ) -> None:
     with pytest.raises(ControlNotReadyError):
-        NuveRuntime._validated_settings_changes({"fan": fan})
+        validated_settings_changes({"fan": fan})
 
 
 def test_command_boundaries_reject_unproven_fractional_celsius_setpoints() -> None:
     with pytest.raises(ControlNotReadyError):
-        NuveRuntime._validated_settings_changes({"temp": 21.5})
+        validated_settings_changes({"temp": 21.5})
     with pytest.raises(ControlNotReadyError):
-        NuveRuntime._validated_auto_changes({"auto_temp_low": 19.5})
+        validated_auto_changes({"auto_temp_low": 19.5})
 
 
 def test_post_queue_local_settings_change_is_rebased_instead_of_overwritten(

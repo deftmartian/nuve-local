@@ -9,7 +9,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
-from .runtime import (
+from .errors import (
     CommandOutcomeUncertainError,
     CommandTimeoutError,
     ControlBusyError,
@@ -17,9 +17,9 @@ from .runtime import (
     ControlNotReadyError,
     ControlStateChangedError,
     NuveControlError,
-    NuveRuntime,
     RuntimeStoppedError,
 )
+from .runtime import NuveRuntime
 
 _CONTROL_ERRORS: dict[type[NuveControlError], tuple[type[HomeAssistantError], str]] = {
     ControlDisabledError: (ServiceValidationError, "control_disabled"),

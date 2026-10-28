@@ -13,10 +13,11 @@ from custom_components.nuve_local.commands import (
     valid_device_settings,
     valid_fan,
     valid_mode_id,
+    validated_settings_changes,
 )
 from custom_components.nuve_local.const import DISPLAY_SETTINGS_KEYS
+from custom_components.nuve_local.errors import ControlNotReadyError
 from custom_components.nuve_local.protocol import DEVICE_SETTINGS_KEYS, NuveProtocolError
-from custom_components.nuve_local.runtime import ControlNotReadyError, NuveRuntime
 from custom_components.nuve_local.storage import _validate_uncertain_desired
 from tests.helpers import settings_upload
 
@@ -64,11 +65,11 @@ def test_mode_id(value: Any, ok: bool) -> None:
 def test_fan_is_validated_identically_at_runtime_and_in_the_journal(value: Any, ok: bool) -> None:
     assert valid_fan(value) is ok
     if ok:
-        NuveRuntime._validated_settings_changes({"fan": value})
+        validated_settings_changes({"fan": value})
         _validate_uncertain_desired("settings", {"fan": value})
     else:
         with pytest.raises(ControlNotReadyError):
-            NuveRuntime._validated_settings_changes({"fan": value})
+            validated_settings_changes({"fan": value})
         with pytest.raises(NuveProtocolError):
             _validate_uncertain_desired("settings", {"fan": value})
 
@@ -114,9 +115,9 @@ def test_partial_backlight_is_validated_and_coerced_at_runtime(value: Any, ok: b
     assert valid_backlight(value, complete=False) is ok
     if not ok:
         with pytest.raises(ControlNotReadyError):
-            NuveRuntime._validated_settings_changes({"backlight": copy.deepcopy(value)})
+            validated_settings_changes({"backlight": copy.deepcopy(value)})
         return
-    validated = NuveRuntime._validated_settings_changes({"backlight": copy.deepcopy(value)})
+    validated = validated_settings_changes({"backlight": copy.deepcopy(value)})
     assert all(isinstance(validated["backlight"][k], float) for k in ("hue", "value") if k in value)
 
 

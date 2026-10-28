@@ -45,6 +45,7 @@ from .const import (
     REQUEST_TIMEOUT_SECONDS,
 )
 from .contractor import contractor_logo_signature
+from .errors import ControlNotReadyError, PersistenceUnavailableError
 from .protobuf import ProtobufDecodeError, decode_event_payload, decode_monitor_payload
 from .protocol import (
     NuveProtocolError,
@@ -58,7 +59,7 @@ from .protocol import (
     render_revision_ack,
     render_settings_ack,
 )
-from .runtime import ControlNotReadyError, NuveRuntime, PersistenceUnavailableError
+from .runtime import NuveRuntime
 from .weather import firmware_forecast_payload
 
 if TYPE_CHECKING:

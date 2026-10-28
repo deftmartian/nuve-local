@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import math
 from collections.abc import Callable
 from typing import Any
@@ -10,10 +11,15 @@ from .const import (
     BACKLIGHT_KEYS,
     DISPLAY_SETTINGS_KEYS,
     FAN_MODE_IDS,
+    MAX_AUTO_TEMPERATURE,
     MAX_FAN_WORKING_PER_HOUR,
+    MAX_TARGET_TEMPERATURE,
+    MIN_AUTO_TEMPERATURE,
     MIN_FAN_WORKING_PER_HOUR,
+    MIN_TARGET_TEMPERATURE,
     TARGET_TEMPERATURE_STEP,
 )
+from .errors import ControlNotReadyError
 from .models import NuveMode
 from .protocol import DEVICE_SETTINGS_KEYS, NuveProtocolError, normalize_night_mode_time
 
@@ -142,3 +148,83 @@ def valid_device_settings(value: Any, *, complete: bool) -> bool:
         normalize_night_mode_time(value["nightModeStart"], name="nightModeStart")
         != normalize_night_mode_time(value["nightModeEnd"], name="nightModeEnd")
     )
+
+
+def validated_settings_changes(changes: dict[str, Any]) -> dict[str, Any]:
+    """Return a deep copy of one exact HA settings command, or raise ControlNotReadyError."""
+
+    if not changes or not set(changes).issubset(
+        {"temp", "mode_id", "fan", "backlight", "settings"}
+    ):
+        raise ControlNotReadyError
+    if "fan" in changes and len(changes) != 1:
+        raise ControlNotReadyError
+    if ({"backlight", "settings"} & set(changes)) and len(changes) != 1:
+        raise ControlNotReadyError
+    validated = copy.deepcopy(changes)
+    if "temp" in validated:
+        try:
+            validated["temp"] = validated_command_celsius(
+                validated["temp"],
+                minimum=MIN_TARGET_TEMPERATURE,
+                maximum=MAX_TARGET_TEMPERATURE,
+            )
+        except ValueError:
+            raise ControlNotReadyError from None
+    if "mode_id" in validated and not valid_mode_id(validated["mode_id"]):
+        raise ControlNotReadyError
+    if "fan" in validated and not valid_fan(validated["fan"]):
+        raise ControlNotReadyError
+    if "backlight" in validated:
+        backlight = validated["backlight"]
+        if not valid_backlight(backlight, complete=False):
+            raise ControlNotReadyError
+        for key in ("hue", "value"):
+            if key in backlight:
+                backlight[key] = float(backlight[key])
+    if "settings" in validated and not valid_device_settings(validated["settings"], complete=False):
+        raise ControlNotReadyError
+    return validated
+
+
+def expand_settings_changes(baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
+    """Expand a display subsection into the complete field-owning object."""
+
+    expanded = copy.deepcopy(changes)
+    for section in ("backlight", "settings"):
+        if section not in expanded:
+            continue
+        current = baseline.get(section)
+        if not isinstance(current, dict):
+            raise ControlNotReadyError
+        merged = copy.deepcopy(current)
+        merged.update(expanded[section])
+        expanded[section] = merged
+    settings = expanded.get("settings")
+    if isinstance(settings, dict):
+        try:
+            start = normalize_night_mode_time(settings.get("nightModeStart"), name="nightModeStart")
+            end = normalize_night_mode_time(settings.get("nightModeEnd"), name="nightModeEnd")
+        except NuveProtocolError as err:
+            raise ControlNotReadyError from err
+        if start == end:
+            raise ControlNotReadyError
+    return expanded
+
+
+def validated_auto_changes(changes: dict[str, Any]) -> dict[str, Any]:
+    """Return validated Auto bounds, or raise ControlNotReadyError."""
+
+    if not changes or not set(changes).issubset({"auto_temp_low", "auto_temp_high"}):
+        raise ControlNotReadyError
+    validated: dict[str, Any] = {}
+    for key, value in changes.items():
+        try:
+            validated[key] = validated_command_celsius(
+                value,
+                minimum=MIN_AUTO_TEMPERATURE,
+                maximum=MAX_AUTO_TEMPERATURE,
+            )
+        except ValueError:
+            raise ControlNotReadyError from None
+    return validated

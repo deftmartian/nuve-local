@@ -14,11 +14,9 @@ from typing import Any, Literal
 
 from .commands import (
     CONTROL_SAFE_MODES,
-    valid_backlight,
-    valid_device_settings,
-    valid_fan,
-    valid_mode_id,
-    validated_command_celsius,
+    expand_settings_changes,
+    validated_auto_changes,
+    validated_settings_changes,
 )
 from .commissioning import valid_technician_url
 from .const import (
@@ -26,24 +24,28 @@ from .const import (
     BOOTSTRAP_WINDOW_SECONDS,
     COMMAND_TIMEOUT_SECONDS,
     LIVENESS_TIMEOUT_SECONDS,
-    MAX_AUTO_TEMPERATURE,
     MAX_DEVICE_TEMPERATURE,
     MAX_OUTDOOR_TEMPERATURE,
-    MAX_TARGET_TEMPERATURE,
-    MIN_AUTO_TEMPERATURE,
     MIN_DEVICE_TEMPERATURE,
     MIN_OUTDOOR_TEMPERATURE,
-    MIN_TARGET_TEMPERATURE,
     MONITOR_FUTURE_SKEW_SECONDS,
     MONITOR_MAX_AGE_SECONDS,
     OUTDOOR_MAX_AGE_SECONDS,
     TEMP_CORRECTION_VERSIONS_BY_FIRMWARE,
 )
+from .errors import (
+    CommandOutcomeUncertainError,
+    CommandTimeoutError,
+    ControlBusyError,
+    ControlDisabledError,
+    ControlNotReadyError,
+    ControlStateChangedError,
+    PersistenceUnavailableError,
+    RuntimeStoppedError,
+)
 from .models import NuveMode, NuveState, NuveSystemType
 from .protocol import (
-    NuveProtocolError,
     next_revision,
-    normalize_night_mode_time,
     parse_auto_mode_baseline,
     render_auto_mode_bootstrap_response,
     render_auto_mode_response,
@@ -67,42 +69,6 @@ SYSTEM_TYPE_NAMES = {
 ResponseSender = Callable[[dict[str, Any]], Awaitable[None]]
 TRACE_EVENT_LIMIT = 128
 _LOGGER = logging.getLogger(__name__)
-
-
-class NuveControlError(Exception):
-    """Base class for safe control failures."""
-
-
-class ControlDisabledError(NuveControlError):
-    """Control was not explicitly enabled."""
-
-
-class ControlNotReadyError(NuveControlError):
-    """The device has not provided enough fresh state for control."""
-
-
-class ControlBusyError(NuveControlError):
-    """Another device command is already active."""
-
-
-class ControlStateChangedError(NuveControlError):
-    """A local edit superseded a queued command before delivery."""
-
-
-class CommandTimeoutError(NuveControlError):
-    """The device did not fetch the command before the deadline."""
-
-
-class CommandOutcomeUncertainError(NuveControlError):
-    """The device fetched the command but did not confirm its result."""
-
-
-class RuntimeStoppedError(NuveControlError):
-    """The integration stopped while a command was active."""
-
-
-class PersistenceUnavailableError(NuveControlError):
-    """Canonical state cannot be trusted after a persistence failure."""
 
 
 @dataclass(slots=True)
@@ -1743,8 +1709,8 @@ class NuveRuntime:
         async with self._transaction_lock:
             self._assert_ready("settings")
             assert self.settings_snapshot is not None
-            desired = self._validated_settings_changes(changes)
-            desired = self._expand_settings_changes(self.settings_snapshot, desired)
+            desired = validated_settings_changes(changes)
+            desired = expand_settings_changes(self.settings_snapshot, desired)
             desired = self._changed_fields(desired, self.settings_snapshot)
             if not desired:
                 return
@@ -1758,7 +1724,7 @@ class NuveRuntime:
         async with self._transaction_lock:
             self._assert_ready("auto")
             assert self.auto_mode_snapshot is not None
-            desired = self._validated_auto_changes(changes)
+            desired = validated_auto_changes(changes)
             desired = self._changed_fields(desired, self.auto_mode_snapshot)
             if not desired:
                 return
@@ -1865,72 +1831,6 @@ class NuveRuntime:
             if not cls._matches({key: value}, baseline)
         }
 
-    @staticmethod
-    def _validated_settings_changes(changes: dict[str, Any]) -> dict[str, Any]:
-        if not changes or not set(changes).issubset(
-            {"temp", "mode_id", "fan", "backlight", "settings"}
-        ):
-            raise ControlNotReadyError
-        if "fan" in changes and len(changes) != 1:
-            raise ControlNotReadyError
-        if ({"backlight", "settings"} & set(changes)) and len(changes) != 1:
-            raise ControlNotReadyError
-        validated = copy.deepcopy(changes)
-        if "temp" in validated:
-            try:
-                validated["temp"] = validated_command_celsius(
-                    validated["temp"],
-                    minimum=MIN_TARGET_TEMPERATURE,
-                    maximum=MAX_TARGET_TEMPERATURE,
-                )
-            except ValueError:
-                raise ControlNotReadyError from None
-        if "mode_id" in validated and not valid_mode_id(validated["mode_id"]):
-            raise ControlNotReadyError
-        if "fan" in validated and not valid_fan(validated["fan"]):
-            raise ControlNotReadyError
-        if "backlight" in validated:
-            backlight = validated["backlight"]
-            if not valid_backlight(backlight, complete=False):
-                raise ControlNotReadyError
-            for key in ("hue", "value"):
-                if key in backlight:
-                    backlight[key] = float(backlight[key])
-        if "settings" in validated and not valid_device_settings(
-            validated["settings"], complete=False
-        ):
-            raise ControlNotReadyError
-        return validated
-
-    @staticmethod
-    def _expand_settings_changes(
-        baseline: dict[str, Any], changes: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Expand a display subsection into the complete field-owning object."""
-
-        expanded = copy.deepcopy(changes)
-        for section in ("backlight", "settings"):
-            if section not in expanded:
-                continue
-            current = baseline.get(section)
-            if not isinstance(current, dict):
-                raise ControlNotReadyError
-            merged = copy.deepcopy(current)
-            merged.update(expanded[section])
-            expanded[section] = merged
-        settings = expanded.get("settings")
-        if isinstance(settings, dict):
-            try:
-                start = normalize_night_mode_time(
-                    settings.get("nightModeStart"), name="nightModeStart"
-                )
-                end = normalize_night_mode_time(settings.get("nightModeEnd"), name="nightModeEnd")
-            except NuveProtocolError as err:
-                raise ControlNotReadyError from err
-            if start == end:
-                raise ControlNotReadyError
-        return expanded
-
     def _settings_owned_upload_result(
         self, incoming: dict[str, Any], received_at: datetime
     ) -> str | None:
@@ -1998,22 +1898,6 @@ class NuveRuntime:
         for key in permitted_changes:
             expected[key] = copy.deepcopy(incoming[key])
         return incoming == expected
-
-    @staticmethod
-    def _validated_auto_changes(changes: dict[str, Any]) -> dict[str, Any]:
-        if not changes or not set(changes).issubset({"auto_temp_low", "auto_temp_high"}):
-            raise ControlNotReadyError
-        validated: dict[str, Any] = {}
-        for key, value in changes.items():
-            try:
-                validated[key] = validated_command_celsius(
-                    value,
-                    minimum=MIN_AUTO_TEMPERATURE,
-                    maximum=MAX_AUTO_TEMPERATURE,
-                )
-            except ValueError:
-                raise ControlNotReadyError from None
-        return validated
 
     @staticmethod
     def _latest_revision(first: str | None, second: str | None) -> str | None:

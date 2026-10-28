@@ -30,8 +30,9 @@ from custom_components.nuve_local.const import (
     DEPLOYMENT_PROFILE_REVERSE_PROXY,
 )
 from custom_components.nuve_local.contractor import contractor_logo_signature
+from custom_components.nuve_local.errors import ControlNotReadyError
 from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
-from custom_components.nuve_local.runtime import ControlNotReadyError, NuveRuntime
+from custom_components.nuve_local.runtime import NuveRuntime
 from custom_components.nuve_local.server import NuveApiServer
 from custom_components.nuve_local.storage import _build_storage_envelope, validate_stored_baselines
 from tests.helpers import accept_auto_mode_snapshot, accept_settings_snapshot, settings_upload
