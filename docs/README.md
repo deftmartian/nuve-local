@@ -34,8 +34,7 @@ Start with the page that matches your task.
 | [Equipment test](performance-test.md) | Performance-test state machine and relay risk |
 | [Installer and warranty APIs](installer-private-api.md) | Private onboarding and identity workflows |
 | [Messages and reset APIs](messages-reset-api.md) | Messages, alerts, identity, reset, and reporting |
-| [Application update](application-update.md) | Normal application updater |
-| [Recovery updater](recovery-updater.md) | Recovery-file planner and copy path |
+| [Application and recovery updates](application-update.md) | Application updater, recovery-file planner, and copy path |
 | [Boot and recovery](boot-update-recovery.md) | U-Boot update and factory-restore paths |
 
 ## Research inventories

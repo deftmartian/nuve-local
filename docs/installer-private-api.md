@@ -6,25 +6,28 @@ Nuve Local does not implement them.
 
 ## Transport inventory
 
-All listed calls use `application/json`. The authentication column is the boolean
-passed by the firmware to `RestApiExecutor`. The vendor server's authorization policy
-is not present in the recovered code.
+The routes in this family are rows R02 (customer), R06 (updateAddress), R07
+(install), R08 (job lookup), R09 (warranty), R10 (ZIP), R26 (getSn), and R27
+(getWirings) of the [API catalog](api-contract-catalog.md), plus R22 (`client`),
+which is documented in [messages-reset-api.md](messages-reset-api.md#mobile-app-identity).
+The catalog owns each route's method, authentication flag, timeout, firmware owner,
+and response use. All calls use `application/json`; the vendor server's
+authorization policy is not present in the recovered code.
 
-| Method and exact path shape | Firmware owner | Auth | Timeout | Response use |
-| --- | --- | --- | --- | --- |
-| `GET api/sync/getWirings?uid=%0` | `Sync::fetchWirings`, Ghidra `0x1f8b70` | yes | 20 s | Ignores the JSON and network status and emits parameterless `wiringReady` when the callback runs |
-| `GET api/sync/getSn?uid=%0` | `Sync::fetchSerialNumber`, `0x21535c` | no | 20 s | Consumes `serial_number` string and `has_client` boolean and mutates identity state |
-| `GET api/sync/client?sn=%0` | `Sync::fetchUserData`, `0x1f9de4` | yes | 20 s | A nonempty object yields wire fields `email` and `con-name`; QML stores them as persisted `userData.email` and `.name` |
-| `GET /api/technicians/service-titan/customer/%0?sn=%1` | `Sync::getJobIdInformation`, `0x1fba04` | yes | 20 s | Object shape below; empty JSON is failure |
-| `GET /api/customer?email=...` | `Sync::getCustomerInformationManual`, `0x1fc178` | yes | 20 s | Email is percent-encoded by `prepareUrlWithEmail`; HTTP success and object emptiness are distinct outcomes |
-| `GET /api/zipCode?code=%0` | `Sync::getAddressInformationManual`, `0x1fd72c` | yes | 20 s | Object shape below; may change timezone during initial setup |
-| `POST /api/sync/updateAddress` | `Sync::updateAddressInformationManual`, `0x1f9344` | yes | 20 s | Emits success, reply error text, and retry disposition |
-| `POST /api/technicians/device/install` | `Sync::installDevice`, `0x204638` | yes | 40 s | Any network-error-free reply is success; `is_enabled` is read only for logging |
-| `POST /api/technicians/warranty` | `Sync::warrantyReplacement`, `0x2148a8` | yes | 20 s | Reads optional `message`; error 299 is treated as nonretryable |
+Details that exist only here:
 
-The paths retain the firmware's inconsistent leading slash. URL-base
-joining happens in `RestApiExecutor`, so normalizing the literals would no longer
-be an exact inventory.
+- `getWirings` ignores the JSON and network status and emits parameterless
+  `wiringReady` whenever the callback runs.
+- `getSn` is the only unauthenticated call and consumes the `serial_number` string
+  and `has_client` boolean to mutate identity state.
+- The customer lookup percent-encodes the email through `prepareUrlWithEmail`; HTTP
+  success and object emptiness are distinct outcomes.
+- `updateAddress` emits success, reply error text, and a retry disposition.
+- `install` has a 40-second timeout and reads `is_enabled` only for logging.
+- `warranty` reads an optional `message`; error 299 is treated as nonretryable.
+- The paths retain the firmware's inconsistent leading slash. URL-base joining
+  happens in `RestApiExecutor`, so normalizing the literals would no longer be an
+  exact inventory.
 
 ## Persisted installer model and enums
 

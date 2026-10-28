@@ -825,7 +825,7 @@ download failure has no recovered retry budget, and a nonzero copy exit leaves t
 in-process latch set. It does not directly write p1/p2; U-Boot consumes those p4
 sources only on its later factory-restore branch. The exact planner, argv, cache,
 cleanup, and completion model is in
-[recovery-updater.md](recovery-updater.md). Real target-process and power-loss
+[application-update.md](application-update.md#application-managed-recovery-updater). Real target-process and power-loss
 outcomes remain unresolved.
 Before applying a persistent API-base change, the operator still needs:
 

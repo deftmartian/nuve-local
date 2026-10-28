@@ -169,8 +169,8 @@ publisher signature. There is no A/B slot, transactional commit, verified rollba
 or safe power-loss guarantee in the recovered chain. Nuve Local does not expose
 update, recovery, or reset commands.
 
-See [application-update.md](application-update.md),
-[recovery-updater.md](recovery-updater.md), and
+See [application-update.md](application-update.md) (application and recovery
+updaters) and
 [boot-update-recovery.md](boot-update-recovery.md) for ordering and failure
 states.
 

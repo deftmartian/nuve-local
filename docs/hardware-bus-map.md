@@ -201,8 +201,8 @@ Ethernet FEC and every USB controller are disabled in the exact device tree, so
 Wi-Fi is the only established normal network path.
 
 The update and recovery partitioning, write order, and authenticity failures are
-documented in [application-update.md](application-update.md),
-[recovery-updater.md](recovery-updater.md), and
+documented in [application-update.md](application-update.md) (application and
+recovery updaters) and
 [boot-update-recovery.md](boot-update-recovery.md).
 
 ## Three distinct watchdog paths
