@@ -9,9 +9,9 @@ import pytest
 from homeassistant.const import EntityCategory
 from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.nuve_local.number import NuveFanWorkingPerHour
 from tests.helpers import (
     accept_settings_snapshot,
+    number_entity,
     ready_runtime_158,
     settings_upload,
 )
@@ -20,7 +20,7 @@ from tests.helpers import (
 def test_fan_minutes_per_hour_is_not_optimistic() -> None:
     async def scenario() -> None:
         runtime = await ready_runtime_158()
-        entity = NuveFanWorkingPerHour(runtime)
+        entity = number_entity(runtime, "fan_working_per_hour")
         assert entity.entity_category == EntityCategory.CONFIG
         assert entity.native_value == 30
 
@@ -50,7 +50,7 @@ def test_fan_minutes_per_hour_is_not_optimistic() -> None:
 def test_fan_minutes_per_hour_rejects_invalid_values(value: float) -> None:
     async def scenario() -> None:
         runtime = await ready_runtime_158()
-        entity = NuveFanWorkingPerHour(runtime)
+        entity = number_entity(runtime, "fan_working_per_hour")
         with pytest.raises(ServiceValidationError):
             await entity.async_set_native_value(value)
         await runtime.async_shutdown()

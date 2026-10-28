@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import ClassVar
+from dataclasses import dataclass
+from typing import Literal
 
-from homeassistant.components.select import SelectEntity
+from homeassistant.components.select import SelectEntity, SelectEntityDescription
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -27,6 +28,45 @@ BACKLIGHT_SHADES = (
 )
 
 
+@dataclass(frozen=True, kw_only=True)
+class NuveSelectDescription(SelectEntityDescription):
+    """Describe one zero-based enum stored as an integer in a settings section."""
+
+    section: Literal["settings", "backlight"]
+    field: str
+
+
+SELECTS: tuple[NuveSelectDescription, ...] = (
+    # Manual or ambient-adaptive display brightness.
+    NuveSelectDescription(
+        key="display_brightness_mode",
+        translation_key="display_brightness_mode",
+        options=list(BRIGHTNESS_MODES),
+        entity_category=EntityCategory.CONFIG,
+        section="settings",
+        field="brightness_mode",
+    ),
+    # Exact six-way saturation model used by the Backlight page.
+    NuveSelectDescription(
+        key="display_backlight_shade",
+        translation_key="display_backlight_shade",
+        options=list(BACKLIGHT_SHADES),
+        entity_category=EntityCategory.CONFIG,
+        section="backlight",
+        field="shadeIndex",
+    ),
+    # Twelve- or twenty-four-hour thermostat clock format.
+    NuveSelectDescription(
+        key="time_format",
+        translation_key="time_format",
+        options=list(TIME_FORMATS),
+        entity_category=EntityCategory.CONFIG,
+        section="settings",
+        field="timeFormat",
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NuveConfigEntry,
@@ -35,90 +75,25 @@ async def async_setup_entry(
     """Set up Nuve display selects."""
 
     runtime = entry.runtime_data.runtime
-    async_add_entities(
-        [
-            NuveBrightnessMode(runtime),
-            NuveBacklightShade(runtime),
-            NuveTimeFormat(runtime),
-        ]
-    )
+    async_add_entities([NuveIndexSelect(runtime, description) for description in SELECTS])
 
 
-class NuveBrightnessMode(NuveEntity, SelectEntity):
-    """Manual or ambient-adaptive display brightness."""
+class NuveIndexSelect(NuveEntity, SelectEntity):
+    """One saved display setting represented as a translated select."""
 
-    _attr_translation_key = "display_brightness_mode"
-    _attr_options: ClassVar[list[str]] = list(BRIGHTNESS_MODES)
-    _attr_entity_category = EntityCategory.CONFIG
+    entity_description: NuveSelectDescription
 
-    def __init__(self, runtime: NuveRuntime) -> None:
+    def __init__(self, runtime: NuveRuntime, description: NuveSelectDescription) -> None:
         super().__init__(runtime)
-        self._attr_unique_id = f"{runtime.serial}_display_brightness_mode"
+        self.entity_description = description
+        self._attr_unique_id = f"{runtime.serial}_{description.key}"
 
     @property
     def current_option(self) -> str | None:
-        value = self._runtime.setting("settings", "brightness_mode")
-        return BRIGHTNESS_MODES[value] if isinstance(value, int) and value in (0, 1) else None
-
-    @property
-    def available(self) -> bool:
-        return super().available and self.current_option is not None
-
-    async def async_select_option(self, option: str) -> None:
-        if option not in BRIGHTNESS_MODES:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="invalid_display_option",
-            )
-        await self._run_control(
-            self._runtime.async_request_settings_change(
-                {"settings": {"brightness_mode": BRIGHTNESS_MODES.index(option)}}
-            )
-        )
-
-
-class NuveBacklightShade(NuveEntity, SelectEntity):
-    """Exact six-way saturation model used by the Backlight page."""
-
-    _attr_translation_key = "display_backlight_shade"
-    _attr_options: ClassVar[list[str]] = list(BACKLIGHT_SHADES)
-    _attr_entity_category = EntityCategory.CONFIG
-
-    def __init__(self, runtime: NuveRuntime) -> None:
-        super().__init__(runtime)
-        self._attr_unique_id = f"{runtime.serial}_display_backlight_shade"
-
-    @property
-    def current_option(self) -> str | None:
-        value = self._runtime.setting("backlight", "shadeIndex")
-        return BACKLIGHT_SHADES[value] if isinstance(value, int) and 0 <= value <= 5 else None
-
-    @property
-    def available(self) -> bool:
-        return super().available and self.current_option is not None
-
-    async def async_select_option(self, option: str) -> None:
-        if option not in BACKLIGHT_SHADES:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="invalid_display_option",
-            )
-        await self._run_control(
-            self._runtime.async_request_settings_change(
-                {"backlight": {"shadeIndex": BACKLIGHT_SHADES.index(option)}}
-            )
-        )
-
-
-class _NuveBinarySettingsSelect(NuveEntity, SelectEntity):
-    """One zero-or-one setting represented as a translated select."""
-
-    _settings_key: str
-
-    @property
-    def current_option(self) -> str | None:
-        value = self._runtime.setting("settings", self._settings_key)
-        return self.options[value] if isinstance(value, int) and value in (0, 1) else None
+        description = self.entity_description
+        value = self._runtime.setting(description.section, description.field)
+        options = self.options
+        return options[value] if isinstance(value, int) and 0 <= value < len(options) else None
 
     @property
     def available(self) -> bool:
@@ -130,21 +105,9 @@ class _NuveBinarySettingsSelect(NuveEntity, SelectEntity):
                 translation_domain=DOMAIN,
                 translation_key="invalid_display_option",
             )
+        description = self.entity_description
         await self._run_control(
             self._runtime.async_request_settings_change(
-                {"settings": {self._settings_key: self.options.index(option)}}
+                {description.section: {description.field: self.options.index(option)}}
             )
         )
-
-
-class NuveTimeFormat(_NuveBinarySettingsSelect):
-    """Twelve- or twenty-four-hour thermostat clock format."""
-
-    _attr_translation_key = "time_format"
-    _attr_options: ClassVar[list[str]] = list(TIME_FORMATS)
-    _attr_entity_category = EntityCategory.CONFIG
-    _settings_key = "timeFormat"
-
-    def __init__(self, runtime: NuveRuntime) -> None:
-        super().__init__(runtime)
-        self._attr_unique_id = f"{runtime.serial}_time_format"

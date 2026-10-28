@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import time
 
-from homeassistant.components.time import TimeEntity
+from homeassistant.components.time import TimeEntity, TimeEntityDescription
 from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -16,6 +17,29 @@ from .entity import NuveEntity
 from .runtime import NuveRuntime
 
 
+@dataclass(frozen=True, kw_only=True)
+class NuveTimeDescription(TimeEntityDescription):
+    """Describe one minute-resolution boundary of the night-mode interval."""
+
+    settings_key: str
+
+
+NIGHT_MODE_TIMES: tuple[NuveTimeDescription, ...] = (
+    NuveTimeDescription(
+        key="night_mode_start",
+        translation_key="night_mode_start",
+        entity_category=EntityCategory.CONFIG,
+        settings_key="nightModeStart",
+    ),
+    NuveTimeDescription(
+        key="night_mode_end",
+        translation_key="night_mode_end",
+        entity_category=EntityCategory.CONFIG,
+        settings_key="nightModeEnd",
+    ),
+)
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: NuveConfigEntry,
@@ -25,24 +49,23 @@ async def async_setup_entry(
 
     runtime = entry.runtime_data.runtime
     async_add_entities(
-        [NuveNightModeTime(runtime, start=True), NuveNightModeTime(runtime, start=False)]
+        [NuveNightModeTime(runtime, description) for description in NIGHT_MODE_TIMES]
     )
 
 
 class NuveNightModeTime(NuveEntity, TimeEntity):
     """One minute-resolution boundary of the overnight night-mode interval."""
 
-    _attr_entity_category = EntityCategory.CONFIG
+    entity_description: NuveTimeDescription
 
-    def __init__(self, runtime: NuveRuntime, *, start: bool) -> None:
+    def __init__(self, runtime: NuveRuntime, description: NuveTimeDescription) -> None:
         super().__init__(runtime)
-        self._settings_key = "nightModeStart" if start else "nightModeEnd"
-        self._attr_translation_key = "night_mode_start" if start else "night_mode_end"
-        self._attr_unique_id = f"{runtime.serial}_{self._attr_translation_key}"
+        self.entity_description = description
+        self._attr_unique_id = f"{runtime.serial}_{description.key}"
 
     @property
     def native_value(self) -> time | None:
-        value = self._runtime.setting("settings", self._settings_key)
+        value = self._runtime.setting("settings", self.entity_description.settings_key)
         return time.fromisoformat(value) if isinstance(value, str) else None
 
     @property
@@ -57,6 +80,6 @@ class NuveNightModeTime(NuveEntity, TimeEntity):
             )
         await self._run_control(
             self._runtime.async_request_settings_change(
-                {"settings": {self._settings_key: value.strftime("%H:%M:%S")}}
+                {"settings": {self.entity_description.settings_key: value.strftime("%H:%M:%S")}}
             )
         )

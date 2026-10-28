@@ -113,6 +113,36 @@ async def ready_runtime(
     return runtime
 
 
+def _by_key(descriptions: Any, key: str) -> Any:
+    return next(item for item in descriptions if item.key == key)
+
+
+def number_entity(runtime: NuveRuntime, key: str) -> Any:
+    from custom_components.nuve_local.number import NUMBERS, NuveNumber
+
+    return NuveNumber(runtime, _by_key(NUMBERS, key))
+
+
+def select_entity(runtime: NuveRuntime, key: str) -> Any:
+    from custom_components.nuve_local.select import SELECTS, NuveIndexSelect
+
+    return NuveIndexSelect(runtime, _by_key(SELECTS, key))
+
+
+def switch_entity(runtime: NuveRuntime, key: str) -> Any:
+    from custom_components.nuve_local.switch import SWITCHES, NuveSettingsSwitch
+
+    return NuveSettingsSwitch(runtime, _by_key(SWITCHES, key))
+
+
+def night_time_entity(runtime: NuveRuntime, *, start: bool) -> Any:
+    from custom_components.nuve_local.time import NIGHT_MODE_TIMES, NuveNightModeTime
+
+    return NuveNightModeTime(
+        runtime, _by_key(NIGHT_MODE_TIMES, "night_mode_start" if start else "night_mode_end")
+    )
+
+
 async def ready_runtime_158() -> NuveRuntime:
     """Return a control-ready runtime on firmware 1.5.8 (temp-correction version 2)."""
 

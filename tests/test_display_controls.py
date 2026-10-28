@@ -14,23 +14,15 @@ from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.nuve_local.errors import ControlNotReadyError, ControlStateChangedError
 from custom_components.nuve_local.light import FIXED_SHADE_HUE, NuveDisplayBacklight
-from custom_components.nuve_local.number import NuveDisplayBrightness
 from custom_components.nuve_local.runtime import NuveRuntime
-from custom_components.nuve_local.select import (
-    NuveBacklightShade,
-    NuveBrightnessMode,
-    NuveTimeFormat,
-)
-from custom_components.nuve_local.switch import (
-    NuveLedBlinking,
-    NuveNightMode,
-    NuveProximityDetection,
-)
-from custom_components.nuve_local.time import NuveNightModeTime
 from tests.helpers import (
     accept_settings_snapshot,
+    night_time_entity,
+    number_entity,
     ready_runtime_158,
+    select_entity,
     settings_upload,
+    switch_entity,
 )
 
 
@@ -87,15 +79,15 @@ def test_display_controls_are_confirmed_nonoptimistic_and_hvac_preserving() -> N
     async def scenario() -> None:
         runtime = await ready_runtime_158()
         light = NuveDisplayBacklight(runtime)
-        brightness = NuveDisplayBrightness(runtime)
-        brightness_mode = NuveBrightnessMode(runtime)
-        shade = NuveBacklightShade(runtime)
-        night_mode = NuveNightMode(runtime)
-        led_blinking = NuveLedBlinking(runtime)
-        night_start = NuveNightModeTime(runtime, start=True)
-        night_end = NuveNightModeTime(runtime, start=False)
-        time_format = NuveTimeFormat(runtime)
-        proximity = NuveProximityDetection(runtime)
+        brightness = number_entity(runtime, "display_brightness")
+        brightness_mode = select_entity(runtime, "display_brightness_mode")
+        shade = select_entity(runtime, "display_backlight_shade")
+        night_mode = switch_entity(runtime, "night_mode")
+        led_blinking = switch_entity(runtime, "hvac_led_blinking")
+        night_start = night_time_entity(runtime, start=True)
+        night_end = night_time_entity(runtime, start=False)
+        time_format = select_entity(runtime, "time_format")
+        proximity = switch_entity(runtime, "proximity_detection")
 
         assert light.is_on is True
         assert light.brightness == 255
@@ -190,7 +182,7 @@ def test_display_brightness_rejects_invalid_values(value: float) -> None:
     async def scenario() -> None:
         runtime = await ready_runtime_158()
         with pytest.raises(ServiceValidationError):
-            await NuveDisplayBrightness(runtime).async_set_native_value(value)
+            await number_entity(runtime, "display_brightness").async_set_native_value(value)
         await runtime.async_shutdown()
 
     asyncio.run(scenario())
@@ -219,7 +211,7 @@ def test_display_backlight_rejects_invalid_values(kwargs: dict[str, object]) -> 
 def test_night_mode_time_rejects_subminute_and_timezone_values() -> None:
     async def scenario() -> None:
         runtime = await ready_runtime_158()
-        entity = NuveNightModeTime(runtime, start=True)
+        entity = night_time_entity(runtime, start=True)
         with pytest.raises(ServiceValidationError):
             await entity.async_set_value(time(22, 0, 1))
         with pytest.raises(ServiceValidationError):
