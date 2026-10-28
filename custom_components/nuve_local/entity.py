@@ -21,6 +21,16 @@ from .runtime import (
     RuntimeStoppedError,
 )
 
+_CONTROL_ERRORS: dict[type[NuveControlError], tuple[type[HomeAssistantError], str]] = {
+    ControlDisabledError: (ServiceValidationError, "control_disabled"),
+    ControlNotReadyError: (ServiceValidationError, "control_not_ready"),
+    ControlBusyError: (ServiceValidationError, "control_busy"),
+    ControlStateChangedError: (HomeAssistantError, "control_state_changed"),
+    CommandTimeoutError: (HomeAssistantError, "command_timeout"),
+    CommandOutcomeUncertainError: (HomeAssistantError, "outcome_uncertain"),
+    RuntimeStoppedError: (HomeAssistantError, "runtime_stopped"),
+}
+
 
 class NuveEntity(Entity):
     """Common entity behavior for a Nuve thermostat."""
@@ -51,36 +61,9 @@ class NuveEntity(Entity):
 
         try:
             await operation
-        except (ControlDisabledError, ControlNotReadyError) as err:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key=(
-                    "control_disabled"
-                    if isinstance(err, ControlDisabledError)
-                    else "control_not_ready"
-                ),
-            ) from err
-        except ControlBusyError as err:
-            raise ServiceValidationError(
-                translation_domain=DOMAIN, translation_key="control_busy"
-            ) from err
-        except ControlStateChangedError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="control_state_changed"
-            ) from err
-        except CommandTimeoutError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="command_timeout"
-            ) from err
-        except CommandOutcomeUncertainError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="outcome_uncertain"
-            ) from err
-        except RuntimeStoppedError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="runtime_stopped"
-            ) from err
         except NuveControlError as err:
-            raise HomeAssistantError(
-                translation_domain=DOMAIN, translation_key="control_failed"
-            ) from err
+            error_class, translation_key = next(
+                (mapped for kind, mapped in _CONTROL_ERRORS.items() if isinstance(err, kind)),
+                (HomeAssistantError, "control_failed"),
+            )
+            raise error_class(translation_domain=DOMAIN, translation_key=translation_key) from err
