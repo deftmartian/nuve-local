@@ -9,7 +9,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import probatio
 import pytest
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
@@ -427,7 +426,7 @@ def test_advanced_network_schema_contains_raw_fields_only() -> None:
 def test_every_form_field_can_be_rendered(schema: vol.Schema) -> None:
     # HA serializes forms with probatio; vol.Any("", int) became a "constant",
     # which the frontend draws as a bare label with no input.
-    fields = probatio.to_field_list(schema, custom_serializer=cv.custom_serializer)
+    fields = _http_flow_schema(schema)
     for field_schema in fields:
         assert "selector" in field_schema or field_schema.get("type") not in (None, "constant"), (
             field_schema
