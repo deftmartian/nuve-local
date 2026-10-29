@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import probatio
 import pytest
 import voluptuous as vol
 from homeassistant.helpers import config_validation as cv
@@ -24,13 +25,17 @@ from custom_components.nuve_local.commissioning import (
 from custom_components.nuve_local.config_flow import (
     NuveLocalConfigFlow,
     _commissioning_schema,
+    _connection_schema,
     _contractor_schema,
     _control_is_being_enabled,
     _control_ready,
+    _control_schema,
     _network_schema,
     _normalize_api_hostname,
     _normalize_temp_correction_version,
+    _pairing_schema,
     _prepare_network_config,
+    _profile_schema,
     _sources_schema,
     _validate_bootstrap_config,
     _validate_contractor_config,
@@ -402,6 +407,38 @@ def test_advanced_network_schema_contains_raw_fields_only() -> None:
         CONF_CERTIFICATE,
         CONF_PRIVATE_KEY,
     }
+
+
+@pytest.mark.parametrize(
+    "schema",
+    [
+        _profile_schema(),
+        _connection_schema(DEPLOYMENT_PROFILE_REVERSE_PROXY),
+        _connection_schema(DEPLOYMENT_PROFILE_DIRECT_TLS),
+        _commissioning_schema(),
+        _sources_schema({}),
+        _contractor_schema({}),
+        _network_schema({}),
+        _network_schema({CONF_THERMOSTAT_HTTPS_PORT: 18443}),
+        _control_schema({}),
+        _pairing_schema(),
+    ],
+)
+def test_every_form_field_can_be_rendered(schema: vol.Schema) -> None:
+    # HA serializes forms with probatio; vol.Any("", int) became a "constant",
+    # which the frontend draws as a bare label with no input.
+    fields = probatio.to_field_list(schema, custom_serializer=cv.custom_serializer)
+    for field_schema in fields:
+        assert "selector" in field_schema or field_schema.get("type") not in (None, "constant"), (
+            field_schema
+        )
+
+
+def test_network_schema_suggests_but_does_not_force_the_thermostat_port() -> None:
+    schema = _network_schema({CONF_THERMOSTAT_HTTPS_PORT: 18443})
+    marker = next(m for m in schema.schema if m.schema == CONF_THERMOSTAT_HTTPS_PORT)
+    assert marker.description == {"suggested_value": 18443}
+    assert CONF_THERMOSTAT_HTTPS_PORT not in schema({})
 
 
 def test_network_and_contractor_validation_remain_strict() -> None:

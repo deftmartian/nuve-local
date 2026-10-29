@@ -223,10 +223,12 @@ def _network_schema(defaults: dict[str, Any]) -> vol.Schema:
             vol.Required(
                 CONF_LISTEN_PORT, default=defaults.get(CONF_LISTEN_PORT, DEFAULT_LISTEN_PORT)
             ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+            # A blank optional field is omitted from user input; vol.Any("", int)
+            # cannot be serialized, so the frontend would render no input at all.
             vol.Optional(
                 CONF_THERMOSTAT_HTTPS_PORT,
-                default=defaults.get(CONF_THERMOSTAT_HTTPS_PORT) or "",
-            ): vol.Any("", vol.All(vol.Coerce(int), vol.Range(min=1, max=65535))),
+                description={"suggested_value": defaults.get(CONF_THERMOSTAT_HTTPS_PORT)},
+            ): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
             vol.Required(
                 CONF_API_HOSTNAME,
                 default=defaults.get(CONF_API_HOSTNAME, DEFAULT_API_HOSTNAME),
