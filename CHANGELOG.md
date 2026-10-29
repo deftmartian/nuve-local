@@ -1,5 +1,63 @@
 # Changelog
 
+## 0.0.5 - 2026-10-28
+
+### Fixed
+
+- Render the thermostat-facing HTTPS port in Network options. In 0.0.4 Home
+  Assistant serialized the field as a constant, so the form showed its label with
+  no input and an existing reverse-proxy entry could not set the port. The field is
+  now an optional integer that suggests the saved value.
+- Accept only ASCII digits in night-mode start and end times. Non-ASCII Unicode
+  digits previously passed the parser and could break that entity's state updates.
+
+### Compatibility
+
+- Development is pinned to Home Assistant 2026.10.4. The compatibility gate covers
+  2026.7.4, 2026.8.1, 2026.9.2, and 2026.10.4; the advertised minimum remains
+  2026.7.4.
+- The development environment now resolves `cryptography` 50.0.1, which clears the
+  advisories noted for 0.0.4.
+
+### Maintenance
+
+- Drive sensors, binary sensors, switches, selects, numbers, and times from entity
+  descriptions. A registry snapshot test proves every entity keeps its unique ID.
+- Type the config entry's runtime data, extract weather sources, trace helpers, and
+  command validators from the runtime, share protocol envelopes and range checks,
+  and remove dead code and unreachable branches.
+- Remove test-only fallback paths from production code; tests now run through the
+  prepared runtime path.
+
+### Documentation
+
+- Move firmware research tools, emulators, and their tests to a separate private
+  repository. Integration, deployment, protocol, field-matrix, and security pages
+  remain here.
+- Consolidate overlapping firmware and API pages and remove stale version labels,
+  test counts, and coverage figures.
+
+### Upgrade, verification, and rollback
+
+- Config-entry and storage versions are unchanged from 0.0.4, so reinstalling the
+  complete 0.0.4 component is a valid rollback.
+- After upgrading a reverse-proxy entry, set the thermostat-facing HTTPS port in
+  Network options to restore optional contractor-logo downloads.
+- After install, verify load, telemetry, control-ready, and the unchanged entity
+  list before issuing commands.
+
+### Remaining limitations
+
+- Schedules, Vacation, and Emergency Heat remain unexposed.
+- Live activation and reversible thermostat command testing remain separate from
+  repository and release validation.
+
+### Validation
+
+- Pass the complete locked repository gate: Ruff, formatting, Pyright, and the test suite.
+- Pass the Home Assistant compatibility gate for 2026.7.4, 2026.8.1, 2026.9.2, and
+  2026.10.4.
+
 ## 0.0.4 - 2026-09-15
 
 ### Fixed
