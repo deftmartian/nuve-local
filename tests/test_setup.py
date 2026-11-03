@@ -6,12 +6,19 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from homeassistant.exceptions import ConfigEntryNotReady
 
 from custom_components.nuve_local import async_setup_entry, async_unload_entry
 from custom_components.nuve_local.sources import validated_outdoor_temperature_c
+
+# The integration reports the current UTC offset for America/Halifax, which
+# changes with daylight saving time; a fixed -10800 failed every winter.
+HALIFAX_UTC_OFFSET = int(
+    datetime.now(ZoneInfo("America/Halifax")).utcoffset().total_seconds()  # type: ignore[union-attr]
+)
 
 
 @pytest.fixture(autouse=True)
@@ -417,7 +424,7 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
         assert runtime.forecast_payload["city"] == {
             "name": "Amherst",
             "country": "CA",
-            "timezone": -10800,
+            "timezone": HALIFAX_UTC_OFFSET,
         }
         assert runtime.forecast_payload["list"][0]["temp"] == {
             "day": 24.0,
