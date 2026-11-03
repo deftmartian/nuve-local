@@ -8,6 +8,7 @@ import struct
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -36,6 +37,12 @@ from custom_components.nuve_local.runtime import NuveRuntime
 from custom_components.nuve_local.server import NuveApiServer
 from custom_components.nuve_local.storage import _build_storage_envelope, validate_stored_baselines
 from tests.helpers import accept_auto_mode_snapshot, accept_settings_snapshot, settings_upload
+
+# The integration reports the current UTC offset for America/Halifax, which
+# changes with daylight saving time; a fixed -10800 failed every winter.
+HALIFAX_UTC_OFFSET = int(
+    datetime.now(ZoneInfo("America/Halifax")).utcoffset().total_seconds()  # type: ignore[union-attr]
+)
 
 SERIAL = "00-000-000000"
 TOKEN = "a" * 64
@@ -1392,7 +1399,7 @@ def test_weather_current_returns_only_observed_state_and_fails_stale() -> None:
         )
         runtime.async_set_forecast(
             {
-                "city": {"name": "Amherst", "country": "CA", "timezone": -10800},
+                "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
                 "list": [
                     {
                         "dt": int(observed_at.timestamp()),
@@ -1424,7 +1431,7 @@ def test_weather_current_returns_only_observed_state_and_fails_stale() -> None:
                         "temp_max": 11.0,
                         "humidity": 82.0,
                     },
-                    "timezone": -10800,
+                    "timezone": HALIFAX_UTC_OFFSET,
                     "sys": {"country": "CA"},
                     "weather": [{"icon": "02d", "description": "partly cloudy"}],
                 },
@@ -1465,7 +1472,7 @@ def test_forecast_projection_and_design_temperature_safe_noop() -> None:
 
             runtime.async_set_forecast(
                 {
-                    "city": {"name": "Amherst", "country": "CA", "timezone": -10800},
+                    "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
                     "list": [
                         {
                             "dt": 1786291200,
@@ -1486,7 +1493,7 @@ def test_forecast_projection_and_design_temperature_safe_noop() -> None:
                 "success": True,
                 "status": "ok",
                 "data": {
-                    "city": {"name": "Amherst", "country": "CA", "timezone": -10800},
+                    "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
                     "list": [
                         {
                             "dt": 1786291200,
