@@ -1,4 +1,11 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>deftmartian/renovate"]
+  "extends": ["local>deftmartian/renovate"],
+  "packageRules": [
+    {
+      "description": "homeassistant pins cryptography exactly; bump it only together with homeassistant",
+      "matchPackageNames": ["cryptography"],
+      "enabled": false
+    }
+  ]
 }
