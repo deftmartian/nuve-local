@@ -4,7 +4,13 @@ name: Check
 
 on:
   push:
+    branches: [main]
   pull_request:
+
+# Branch pushes are checked through their PR, so each push runs once; a newer push cancels the older run.
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   check:
