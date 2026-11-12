@@ -67,7 +67,7 @@ class NuveClimate(NuveEntity, ClimateEntity):
     """A thermostat entity that reports and changes only confirmed local state."""
 
     _attr_name = None
-    _attr_temperature_unit = UnitOfTemperature.CELSIUS
+    _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes: ClassVar[list[HVACMode]] = list(HA_TO_NUVE_MODE)
     _attr_supported_features = (
         ClimateEntityFeature.TARGET_TEMPERATURE
@@ -82,7 +82,7 @@ class NuveClimate(NuveEntity, ClimateEntity):
         self._attr_unique_id = f"{runtime.serial}_climate"
 
     @property
-    def current_temperature(self) -> float | None:
+    def native_current_temperature(self) -> float | None:
         return self._runtime.state.current_temperature
 
     @property
@@ -106,14 +106,14 @@ class NuveClimate(NuveEntity, ClimateEntity):
         return self._runtime.state.current_humidity
 
     @property
-    def target_temperature(self) -> float | None:
+    def native_target_temperature(self) -> float | None:
         if self.hvac_mode == HVACMode.HEAT_COOL:
             return None
         requested = self._runtime.requested_target_temperature
         return requested if requested is not None else self._runtime.state.target_temperature
 
     @property
-    def target_temperature_low(self) -> float | None:
+    def native_target_temperature_low(self) -> float | None:
         return (
             self._runtime.state.auto_temperature_low
             if self.hvac_mode == HVACMode.HEAT_COOL
@@ -121,7 +121,7 @@ class NuveClimate(NuveEntity, ClimateEntity):
         )
 
     @property
-    def target_temperature_high(self) -> float | None:
+    def native_target_temperature_high(self) -> float | None:
         return (
             self._runtime.state.auto_temperature_high
             if self.hvac_mode == HVACMode.HEAT_COOL
@@ -182,8 +182,8 @@ class NuveClimate(NuveEntity, ClimateEntity):
         if self.hvac_mode == HVACMode.HEAT_COOL:
             if ATTR_TEMPERATURE in kwargs:
                 self._validation_error("invalid_auto_temperature")
-            low = kwargs.get(ATTR_TARGET_TEMP_LOW, self.target_temperature_low)
-            high = kwargs.get(ATTR_TARGET_TEMP_HIGH, self.target_temperature_high)
+            low = kwargs.get(ATTR_TARGET_TEMP_LOW, self.native_target_temperature_low)
+            high = kwargs.get(ATTR_TARGET_TEMP_HIGH, self.native_target_temperature_high)
             if low is None or high is None:
                 self._validation_error("auto_baseline_missing")
             low = self._validated_auto_temperature(low)

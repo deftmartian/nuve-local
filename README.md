@@ -7,7 +7,7 @@ LAN. It adds climate controls, sensor data, display settings, diagnostics, and
 Home Assistant Repairs without a Nuve account or cloud service.
 
 ![Version 0.0.5](https://img.shields.io/badge/release-v0.0.5-2e7d32)
-![Home Assistant 2026.7.4 or newer](https://img.shields.io/badge/Home%20Assistant-2026.7.4%2B-41bdf5)
+![Home Assistant 2026.11.0 or newer](https://img.shields.io/badge/Home%20Assistant-2026.11.0%2B-41bdf5)
 ![Local push](https://img.shields.io/badge/IoT%20class-local%20push-00a878)
 ![License](https://img.shields.io/badge/license-MIT-7b68ee)
 
@@ -53,7 +53,7 @@ This is not a plug-and-play cloud login. Initial setup requires:
 - root SSH access to back up and, when needed, redirect the thermostat;
 - local DNS and firewall control;
 - an operator-controlled hostname with a public TLS certificate; and
-- Home Assistant 2026.7.4 or newer with access to `/config`.
+- Home Assistant 2026.11.0 or newer with access to `/config`.
 
 Setup persistently changes the thermostat's API endpoint to that hostname. Local DNS
 then resolves it to the proxy or listener on your LAN.
