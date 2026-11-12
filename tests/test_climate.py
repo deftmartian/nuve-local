@@ -47,8 +47,8 @@ def test_climate_reports_confirmed_mode_and_equipment_action() -> None:
 
         assert entity.hvac_mode == HVACMode.HEAT
         assert entity.hvac_action == HVACAction.HEATING
-        assert entity.current_temperature == 21.25
-        assert entity.target_temperature == 21.5
+        assert entity.native_current_temperature == 21.25
+        assert entity.native_target_temperature == 21.5
         assert entity.fan_mode == "auto"
         assert entity.extra_state_attributes["control_status"] == "idle"
         assert entity.extra_state_attributes["control_block_reason"] == "ready"
@@ -118,11 +118,11 @@ def test_climate_projects_requested_temperature_until_confirmation(
         monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         entity = NuveClimate(runtime)
-        original = entity.target_temperature
+        original = entity.native_target_temperature
         task = asyncio.create_task(entity.async_set_temperature(**{ATTR_TEMPERATURE: 22.0}))
         await asyncio.sleep(0)
         assert runtime.state.target_temperature == original
-        assert entity.target_temperature == 22.0
+        assert entity.native_target_temperature == 22.0
         assert entity.extra_state_attributes["requested_target_temperature"] == 22.0
         assert entity.extra_state_attributes["confirmed_target_temperature"] == original
         assert entity.extra_state_attributes["control_status"] == "queued"
@@ -130,7 +130,7 @@ def test_climate_projects_requested_temperature_until_confirmation(
         response = await runtime.async_get_settings_response(requested_at=datetime.now(UTC))
         assert response["temp"] == 22.0
         assert runtime.state.target_temperature == original
-        assert entity.target_temperature == 22.0
+        assert entity.native_target_temperature == 22.0
         assert entity.extra_state_attributes["control_status"] == "delivered"
 
         await asyncio.sleep(0.002)
@@ -147,7 +147,7 @@ def test_climate_projects_requested_temperature_until_confirmation(
         )
         await task
         assert runtime.state.target_temperature == 22.0
-        assert entity.target_temperature == 22.0
+        assert entity.native_target_temperature == 22.0
         assert entity.extra_state_attributes["control_status"] == "idle"
         await runtime.async_shutdown()
 
@@ -159,16 +159,16 @@ def test_climate_requested_temperature_reverts_after_undelivered_timeout() -> No
         runtime = await ready_runtime()
         runtime.command_timeout_seconds = 0.01
         entity = NuveClimate(runtime)
-        confirmed = entity.target_temperature
+        confirmed = entity.native_target_temperature
 
         with pytest.raises(HomeAssistantError):
             task = asyncio.create_task(entity.async_set_temperature(**{ATTR_TEMPERATURE: 22.0}))
             await asyncio.sleep(0)
-            assert entity.target_temperature == 22.0
+            assert entity.native_target_temperature == 22.0
             await task
 
         assert runtime.state.target_temperature == confirmed
-        assert entity.target_temperature == confirmed
+        assert entity.native_target_temperature == confirmed
         assert entity.extra_state_attributes["control_status"] == "idle"
         await runtime.async_shutdown()
 
@@ -195,14 +195,14 @@ def test_climate_exposes_only_the_active_mode_target_model() -> None:
         runtime = await ready_runtime()
         entity = NuveClimate(runtime)
 
-        assert entity.target_temperature == 21.5
-        assert entity.target_temperature_low is None
-        assert entity.target_temperature_high is None
+        assert entity.native_target_temperature == 21.5
+        assert entity.native_target_temperature_low is None
+        assert entity.native_target_temperature_high is None
 
         runtime.state = replace(runtime.state, mode=NuveMode.AUTO)
-        assert entity.target_temperature is None
-        assert entity.target_temperature_low == 19.0
-        assert entity.target_temperature_high == 23.0
+        assert entity.native_target_temperature is None
+        assert entity.native_target_temperature_low == 19.0
+        assert entity.native_target_temperature_high == 23.0
         assert entity.min_temp == 4.0
         assert entity.max_temp == 32.0
         await runtime.async_shutdown()

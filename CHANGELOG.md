@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Compatibility
+
+- Require Home Assistant 2026.11.0 or newer. The climate entity now uses the
+  `native_` temperature properties introduced in 2026.11; earlier releases are no
+  longer supported. Development is pinned to 2026.11.0 and `cryptography` 50.0.2.
+
 ## 0.0.5 - 2026-10-28
 
 ### Fixed

@@ -9,7 +9,7 @@ For an existing installation, skip to [Routine upgrades](#routine-upgrades).
 
 ## 1. Record the starting details
 
-You need Home Assistant 2026.7.4 or newer, access to `/config`, an SSH client, control
+You need Home Assistant 2026.11.0 or newer, access to `/config`, an SSH client, control
 of local DNS and firewall rules, and a private backup directory.
 
 Use DHCP or ARP records to confirm the thermostat's IP. Make sure the HVAC is stable
