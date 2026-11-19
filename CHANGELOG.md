@@ -1,12 +1,47 @@
 # Changelog
 
-## Unreleased
+## 0.0.6 - 2026-11-18
+
+### Fixed
+
+- Serve a renewed direct-TLS certificate without restarting. The listener loaded
+  its certificate once at start, so a renewal (for example a 90-day ACME
+  certificate) was not served until Home Assistant or the entry restarted, and the
+  thermostat's TLS failed once the old certificate expired. The listener now checks
+  the certificate and key files hourly and serves a renewed pair to new
+  connections. A pair that cannot be loaded, such as a certificate written before
+  its key, is not served: the current pair stays in use, a warning is logged, and
+  the check is retried after a minute. Reverse-proxy deployments are unaffected.
+- Bound the diagnostics counter for unsupported endpoints. The first 32 distinct
+  unsupported paths keep their own count; later ones share one bucket.
 
 ### Compatibility
 
 - Require Home Assistant 2026.11.0 or newer. The climate entity now uses the
   `native_` temperature properties introduced in 2026.11; earlier releases are no
-  longer supported. Development is pinned to 2026.11.0 and `cryptography` 50.0.2.
+  longer supported.
+- Development requires Python 3.14; Home Assistant's dependencies have no 3.15
+  wheels yet.
+
+### Maintenance
+
+- CI now runs four gates on every pull request: the lint, type and test check with
+  an 85% branch-coverage floor; the test suite on the advertised Home Assistant
+  minimum; hassfest; and a Gitleaks scan of the full history. HACS validation runs
+  on the GitHub mirror.
+- Split the runtime module into a `runtime` package of focused modules, with no
+  behaviour change. Internal invariant checks no longer disappear under
+  `python -O`.
+- Test every options-flow step and every stored-baseline rejection rule, the direct
+  TLS listener through real handshakes, and certificate renewal. Weather tests no
+  longer depend on the date they run.
+
+### Documentation
+
+- Document CI, Renovate, the Pyright suppressions, and the Home Assistant version
+  policy in the maintenance guide. Tests now keep the advertised minimum consistent
+  across `hacs.json`, the README, and the deployment guide.
+- Document in-place certificate renewal for direct TLS.
 
 ## 0.0.5 - 2026-10-28
 
