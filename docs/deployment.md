@@ -40,7 +40,7 @@ Recovery image 1.5.8 enables root SSH on TCP 22 with this vendor default:
 
 ```text
 username: root
-password: stherrm
+password: stherm
 ```
 
 Other versions may differ. Enter the password interactively. On first connection,
