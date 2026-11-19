@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.0.7 - 2026-11-19
+
+### Fixed
+
+- Fall back to the weather entity when the outdoor temperature sensor stops
+  reporting. The first usable source always won, and sources were re-checked only
+  when one changed, so a sensor that went quiet stayed selected after its data was
+  more than 15 minutes old. The thermostat then received no outdoor conditions even
+  with a fresh weather entity configured. A sensor that writes only when its value
+  changes, such as some template or averaging sensors, could trigger this on a
+  steady day. Sources are now chosen by freshness and re-checked every minute.
+- Keep the "Outdoor temperature fresh" diagnostic accurate as outdoor data ages; it
+  previously updated only when a source changed.
+
+### Added
+
+- A "Nuve outdoor data is stale" Repairs warning when outdoor sources are configured
+  but none has reported within 15 minutes for five minutes.
+
+### Documentation
+
+- Document the weather sources, the 15-minute reporting requirement, and the
+  fallback in the deployment guide and field matrix.
+- Correct the stock recovery password in the deployment guide.
+
 ## 0.0.6 - 2026-11-18
 
 ### Fixed
