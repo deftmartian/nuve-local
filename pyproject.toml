@@ -1,7 +1,7 @@
 [project]
 name = "nuve-local"
 version = "0.0.5"
-requires-python = ">=3.14.2"
+requires-python = ">=3.14.2,<3.15"
 
 [dependency-groups]
 dev = [
@@ -11,6 +11,7 @@ dev = [
   "homeassistant==2026.11.1",
   "pyright==1.1.414",
   "pytest==9.2.0",
+  "pytest-cov==7.1.0",
   "ruff==0.17.4",
 ]
 
@@ -18,6 +19,16 @@ dev = [
 addopts = "-q"
 pythonpath = ["."]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["custom_components/nuve_local"]
+
+[tool.coverage.report]
+# Floor, not target: raise it as coverage grows, never lower it to pass.
+fail_under = 85
+show_missing = true
+skip_covered = true
 
 [tool.ruff]
 line-length = 100

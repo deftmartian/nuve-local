@@ -1,0 +1,10 @@
+# Reviewed Gitleaks false positives, by fingerprint (commit:file:rule:line).
+# Add an entry only after confirming the match is not a credential.
+
+# TOKEN_PATTERN is the regex that validates device tokens, not a token.
+3eba76bdccb2c94ed2e9bf2c62339be4bd5391ce:custom_components/nuve_local/const.py:generic-api-key:70
+
+# "aux1_and_emergency_together" is an entity key and translation key.
+3eba76bdccb2c94ed2e9bf2c62339be4bd5391ce:custom_components/nuve_local/binary_sensor.py:generic-api-key:198
+3eba76bdccb2c94ed2e9bf2c62339be4bd5391ce:custom_components/nuve_local/binary_sensor.py:generic-api-key:199
+3720cb666b29dc74ac75f80ba5b7f2fc8500bc31:tests/snapshots/entities.json:generic-api-key:35

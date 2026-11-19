@@ -8,4 +8,4 @@ uv lock --check
 uv run --frozen ruff check .
 uv run --frozen ruff format --check .
 uv run --frozen pyright
-uv run --frozen pytest
+uv run --frozen pytest --cov

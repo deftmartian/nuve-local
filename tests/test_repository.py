@@ -20,6 +20,41 @@ def test_release_versions_are_consistent() -> None:
     assert f"## {version} -" in changelog
 
 
+def _home_assistant_pin() -> str:
+    dev = tomllib.loads((ROOT / "pyproject.toml").read_text())["dependency-groups"]["dev"]
+    return next(spec.split("==", 1)[1] for spec in dev if spec.startswith("homeassistant=="))
+
+
+def test_home_assistant_minimum_is_consistent() -> None:
+    """hacs.json is the single source of the supported minimum; prose must follow it."""
+    minimum = json.loads((ROOT / "hacs.json").read_text())["homeassistant"]
+    readme = (ROOT / "README.md").read_text()
+    deployment = (ROOT / "docs/deployment.md").read_text()
+
+    claimed = {
+        *re.findall(r"Home Assistant (\d{4}\.\d+\.\d+) or newer", readme),
+        *re.findall(r"Home Assistant (\d{4}\.\d+\.\d+) or newer", deployment),
+        *re.findall(r"Home%20Assistant-(\d{4}\.\d+\.\d+)%2B", readme),
+    }
+    assert claimed == {minimum}
+
+    pin = tuple(int(part) for part in _home_assistant_pin().split("."))
+    assert pin >= tuple(int(part) for part in minimum.split("."))
+
+
+def test_docs_do_not_quote_a_stale_home_assistant_pin() -> None:
+    """Renovate bumps the pin without touching prose, so prose must not drift from it."""
+    pin = _home_assistant_pin()
+    pages = [ROOT / "README.md", *sorted((ROOT / "docs").glob("*.md"))]
+    stale = [
+        f"{page.relative_to(ROOT)}: {quoted}"
+        for page in pages
+        for quoted in re.findall(r"pinned to `?(\d{4}\.\d+\.\d+)", page.read_text())
+        if quoted != pin
+    ]
+    assert not stale
+
+
 def test_english_translation_matches_source_strings() -> None:
     strings = json.loads((ROOT / "custom_components/nuve_local/strings.json").read_text())
     translation = json.loads(
