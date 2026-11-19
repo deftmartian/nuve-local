@@ -9,7 +9,6 @@ import hmac
 import json
 import logging
 import math
-import ssl
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal, TypeGuard
@@ -29,6 +28,7 @@ from .commissioning import (
 )
 from .const import (
     CERTIFICATE_RELOAD_INTERVAL_SECONDS,
+    CERTIFICATE_RELOAD_RETRY_SECONDS,
     CONF_API_HOSTNAME,
     CONF_CERTIFICATE,
     CONF_CONTRACTOR_BRAND,
@@ -143,6 +143,7 @@ class NuveApiServer:
         self._runner: web.AppRunner | None = None
         self._certificate: ReloadableCertificate | None = None
         self._certificate_watch: asyncio.Task[None] | None = None
+        self._certificate_reload_failed = False
         self._token_lock = asyncio.Lock()
         self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
         self._logged_first_settings_upload = False
@@ -218,27 +219,40 @@ class NuveApiServer:
         """Pick up a renewed direct-TLS certificate without restarting the listener."""
 
         while True:
-            await asyncio.sleep(CERTIFICATE_RELOAD_INTERVAL_SECONDS)
-            await self.async_reload_certificate_if_changed()
+            await asyncio.sleep(
+                CERTIFICATE_RELOAD_RETRY_SECONDS
+                if self._certificate_reload_failed
+                else CERTIFICATE_RELOAD_INTERVAL_SECONDS
+            )
+            try:
+                await self.async_reload_certificate_if_changed()
+            except Exception:
+                # Keep watching: a dead watcher would silently stop renewals.
+                self._certificate_reload_failed = True
+                _LOGGER.exception("Nuve local listener could not check its TLS certificate")
 
     async def async_reload_certificate_if_changed(self) -> bool:
-        """Load changed certificate files; keep serving the current pair on error."""
+        """Serve changed certificate files to new connections; keep the current pair on error."""
 
         certificate = self._certificate
         if certificate is None:
             return False
         try:
-            reloaded = await self._hass.async_add_executor_job(certificate.reload_if_changed)
-        except (OSError, ssl.SSLError) as err:
+            loaded = await self._hass.async_add_executor_job(certificate.load_if_changed)
+        except OSError as err:  # includes ssl.SSLError
+            self._certificate_reload_failed = True
             _LOGGER.warning(
                 "Nuve local listener kept its current TLS certificate because the "
                 "configured certificate files could not be loaded: %s",
                 err,
             )
             return False
-        if reloaded:
-            _LOGGER.info("Nuve local listener loaded a renewed TLS certificate")
-        return reloaded
+        self._certificate_reload_failed = False
+        if loaded is None:
+            return False
+        certificate.publish(*loaded)
+        _LOGGER.info("Nuve local listener loaded a renewed TLS certificate")
+        return True
 
     async def async_stop(self) -> None:
         """Stop the listener and release its socket."""

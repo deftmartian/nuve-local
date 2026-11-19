@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 
+import custom_components.nuve_local.server as server_module
 from custom_components.nuve_local.certificate import ReloadableCertificate, async_load_certificate
 from custom_components.nuve_local.commissioning import new_pairing_deadline
 from custom_components.nuve_local.const import (
@@ -139,7 +140,8 @@ def test_unchanged_files_are_not_reloaded(tmp_path: Path) -> None:
     certificate, private_key, _ = _write_test_certificate(tmp_path)
     loaded = ReloadableCertificate(certificate, private_key)
 
-    assert loaded.reload_if_changed() is False
+    assert loaded.load_if_changed() is None
+    assert loaded.current is loaded.context
 
 
 def test_a_mismatched_renewal_keeps_the_previous_pair(tmp_path: Path) -> None:
@@ -149,10 +151,11 @@ def test_a_mismatched_renewal_keeps_the_previous_pair(tmp_path: Path) -> None:
     # A renewal caught half-written: a new certificate next to the old key.
     _write_test_certificate(tmp_path, write_key=False)
     with pytest.raises(ssl.SSLError):
-        loaded.reload_if_changed()
+        loaded.load_if_changed()
+    assert loaded.current is loaded.context
     # The failure was not recorded as loaded, so the next check retries.
     with pytest.raises(ssl.SSLError):
-        loaded.reload_if_changed()
+        loaded.load_if_changed()
 
 
 def _direct_tls_server(certificate: str, private_key: str) -> NuveApiServer:
@@ -184,7 +187,7 @@ def _direct_tls_server(certificate: str, private_key: str) -> NuveApiServer:
     )
 
 
-async def _served_certificate(server: NuveApiServer) -> bytes:
+async def _served_certificate(server: NuveApiServer, *, sni: bool = True) -> bytes:
     """Complete a real TLS handshake with the listener and return its certificate."""
 
     assert server._runner is not None
@@ -192,7 +195,10 @@ async def _served_certificate(server: NuveApiServer) -> bytes:
     client = ssl.create_default_context()
     client.check_hostname = False
     client.verify_mode = ssl.CERT_NONE
-    _, writer = await asyncio.open_connection(host, port, ssl=client, server_hostname="nuve.test")
+    # An empty server_hostname sends no SNI, as some thermostat builds might.
+    _, writer = await asyncio.open_connection(
+        host, port, ssl=client, server_hostname="nuve.test" if sni else ""
+    )
     try:
         served = writer.get_extra_info("ssl_object").getpeercert(binary_form=True)
     finally:
@@ -217,15 +223,60 @@ def test_direct_tls_listener_serves_a_renewed_certificate_without_restart(
             _, _, renewed = _write_test_certificate(tmp_path)
             assert await server.async_reload_certificate_if_changed() is True
             assert await _served_certificate(server) == renewed
+            assert await _served_certificate(server, sni=False) == renewed
 
             # A broken renewal is logged and the renewed pair keeps serving.
             _write_test_certificate(tmp_path, write_key=False)
             assert await server.async_reload_certificate_if_changed() is False
+            assert server._certificate_reload_failed is True
             assert await _served_certificate(server) == renewed
         finally:
             watch = server._certificate_watch
             await server.async_stop()
         assert watch is not None and watch.cancelled()
         assert server._certificate_watch is None
+
+    asyncio.run(scenario())
+
+
+def test_the_watcher_picks_up_a_renewal_and_survives_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(server_module, "CERTIFICATE_RELOAD_INTERVAL_SECONDS", 0.01)
+    monkeypatch.setattr(server_module, "CERTIFICATE_RELOAD_RETRY_SECONDS", 0.01)
+
+    async def served_becomes(server: NuveApiServer, expected: bytes) -> None:
+        async with asyncio.timeout(5):
+            # Polls an external effect (the served certificate); there is no event to await.
+            while await _served_certificate(server) != expected:  # noqa: ASYNC110
+                await asyncio.sleep(0.02)
+
+    async def scenario() -> None:
+        certificate, private_key, _ = _write_test_certificate(tmp_path)
+        server = _direct_tls_server(certificate, private_key)
+        await server.async_start()
+        try:
+            _, _, renewed = _write_test_certificate(tmp_path)
+            await served_becomes(server, renewed)
+
+            # An unexpected error is logged, and the watcher keeps running.
+            original = server.async_reload_certificate_if_changed
+            calls = 0
+
+            async def failing_once() -> bool:
+                nonlocal calls
+                calls += 1
+                if calls == 1:
+                    raise RuntimeError("synthetic watcher failure")
+                return await original()
+
+            monkeypatch.setattr(server, "async_reload_certificate_if_changed", failing_once)
+            _, _, again = _write_test_certificate(tmp_path)
+            await served_becomes(server, again)
+            assert calls >= 2
+            assert server._certificate_watch is not None
+            assert not server._certificate_watch.done()
+        finally:
+            await server.async_stop()
 
     asyncio.run(scenario())

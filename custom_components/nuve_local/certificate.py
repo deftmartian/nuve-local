@@ -31,10 +31,14 @@ def _file_signature(certificate: str, private_key: str) -> FileSignature:
 
 
 class ReloadableCertificate:
-    """A direct-TLS server context that can pick up renewed certificate files.
+    """A direct-TLS listener context that can switch to renewed certificate files.
 
-    The listener keeps serving ``context``. Loading a new chain into an existing
-    SSLContext affects only later handshakes, so renewal needs no socket restart.
+    The listener is built with ``context`` and that context is never modified
+    after start: OpenSSL does not support changing a context while handshakes use
+    it. A renewal is loaded into a complete, fresh context instead (in an
+    executor), then published on the event loop. ``context``'s SNI callback, which
+    runs on the event loop for every handshake, with or without SNI, points each
+    new connection at the current context. Existing connections are unaffected.
     """
 
     def __init__(self, certificate: str, private_key: str) -> None:
@@ -44,24 +48,39 @@ class ReloadableCertificate:
         self._private_key = private_key
         self._signature = _file_signature(certificate, private_key)
         self.context = _context_from_paths(certificate, private_key)
+        self._current = self.context
+        self.context.sni_callback = self._select_current
 
-    def reload_if_changed(self) -> bool:
-        """Load the files again if they changed since the last successful load.
+    @property
+    def current(self) -> ssl.SSLContext:
+        """Return the context new handshakes are switched to."""
 
-        Blocking: run in an executor. The new pair is validated in a throwaway
-        context first, because a failed ``load_cert_chain`` can leave the live
-        context holding a new certificate with the old key. On any error the live
-        context keeps the previous pair and the error propagates, so the next
-        check retries (for example after a renewal tool finishes writing).
+        return self._current
+
+    def _select_current(
+        self, ssl_object: ssl.SSLObject, _server_name: str | None, context: ssl.SSLContext
+    ) -> None:
+        if self._current is not context:
+            ssl_object.context = self._current
+
+    def load_if_changed(self) -> tuple[ssl.SSLContext, FileSignature] | None:
+        """Build a fresh context if the files changed since the last publish.
+
+        Blocking: run in an executor. Files are read once, into a new context, so
+        a renewal written mid-check can only make this raise (and be retried); it
+        can never leave a published context with a mismatched pair.
         """
 
         signature = _file_signature(self._certificate, self._private_key)
         if signature == self._signature:
-            return False
-        _context_from_paths(self._certificate, self._private_key)
-        self.context.load_cert_chain(self._certificate, self._private_key)
+            return None
+        return _context_from_paths(self._certificate, self._private_key), signature
+
+    def publish(self, context: ssl.SSLContext, signature: FileSignature) -> None:
+        """Switch new handshakes to ``context``. Call on the event loop."""
+
+        self._current = context
         self._signature = signature
-        return True
 
 
 async def async_load_certificate(
