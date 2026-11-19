@@ -9,7 +9,11 @@ from typing import Any
 
 from homeassistant.data_entry_flow import FlowResultType
 
-from custom_components.nuve_local.config_flow import NuveLocalConfigFlow, NuveLocalOptionsFlow
+from custom_components.nuve_local.config_flow import (
+    _OPEN_PAIRING_WINDOW,
+    NuveLocalConfigFlow,
+    NuveLocalOptionsFlow,
+)
 from custom_components.nuve_local.const import (
     CONF_API_HOSTNAME,
     CONF_AUTOMATIC_BASELINE_CAPTURE,
@@ -185,7 +189,8 @@ def test_status_with_a_ready_runtime_reports_live_state() -> None:
     assert placeholders["settings"] == "ready"
     assert placeholders["auto"] == "ready"
     assert placeholders["monitor"] == "fresh"
-    assert placeholders["control"] == entry.runtime_data.runtime.control_block_reason
+    # The runtime is ready, but the entry has not enabled control.
+    assert placeholders["control"] == "control_disabled"
 
 
 def test_enabling_control_requires_a_ready_runtime() -> None:
@@ -226,8 +231,9 @@ def test_pairing_reopens_the_window_and_forgets_the_paired_token() -> None:
     assert _run(flow.async_step_pairing({}))["type"] is FlowResultType.MENU
     assert entry.data[CONF_TOKEN_SHA256] == "f" * 64
 
-    flow_field = next(str(key) for key in _run(flow.async_step_pairing())["data_schema"].schema)
-    saved = _run(flow.async_step_pairing({flow_field: True}))
+    schema = _run(flow.async_step_pairing())["data_schema"].schema
+    assert [str(key) for key in schema] == [_OPEN_PAIRING_WINDOW]
+    saved = _run(flow.async_step_pairing({_OPEN_PAIRING_WINDOW: True}))
     assert saved["type"] is FlowResultType.CREATE_ENTRY
     assert CONF_TOKEN_SHA256 not in entry.data
     assert CONF_PAIRING_DEADLINE not in entry.data
@@ -259,6 +265,7 @@ def test_contractor_details_are_all_or_nothing() -> None:
     complete = {
         CONF_CONTRACTOR_BRAND: "Example HVAC",
         CONF_CONTRACTOR_PHONE: "555-0100",
+        # The flow checks only that the logo path is absolute; setup reads the file.
         CONF_CONTRACTOR_LOGO_PATH: "/config/example.png",
         CONF_CONTRACTOR_URL: "https://example.com",
     }
@@ -283,7 +290,9 @@ def test_commissioning_options_validate_like_the_initial_flow() -> None:
         flow.async_step_commissioning({**valid, CONF_BOOTSTRAP_METADATA_CONFIRMED: False})
     )
     assert rejected["type"] is FlowResultType.FORM
-    assert rejected["errors"]
+    assert rejected["errors"] == {
+        CONF_BOOTSTRAP_METADATA_CONFIRMED: "commissioning_confirmation_required"
+    }
 
     saved = _run(flow.async_step_commissioning(valid))
     assert saved["type"] is FlowResultType.CREATE_ENTRY

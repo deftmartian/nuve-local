@@ -159,9 +159,15 @@ ENVELOPE_REJECTIONS = {
         _set("auto_revision_floor", "2026-08-09 05:00:00"),
         "Auto revision floor regressed",
     ),
-    "runtime metadata is not text": (_set("live_data_command_time", 7), "is invalid"),
+    "runtime metadata is not text": (
+        _set("live_data_command_time", 7),
+        "stored live_data_command_time is invalid",
+    ),
     "settings hash mismatch": (_set("settings_sha256", "0" * 64), "settings integrity hash"),
-    "settings without a revision": (_set("settings_revision", None), "revision is missing"),
+    "settings without a revision": (
+        _set("settings_revision", None),
+        "stored settings revision is missing",
+    ),
     "auto without a revision": (_set("auto_mode_revision", None), "Auto revision is missing"),
     "auto hash mismatch": (_set("auto_mode_sha256", "0" * 64), "Auto integrity hash"),
     "initial capture missing": (_set("initial_capture", None), "initial settings capture"),
@@ -172,7 +178,7 @@ ENVELOPE_REJECTIONS = {
     ),
     "uncertain command revision invalid": (
         _set("uncertain_command", {"kind": "settings", "desired": {"temp": 21}, "revision": 1}),
-        "revision is invalid",
+        "uncertain command revision is invalid",
     ),
 }
 
@@ -185,6 +191,16 @@ def test_invalid_baseline_envelopes_are_rejected(case: str) -> None:
 
     with pytest.raises(NuveProtocolError, match=message):
         validate_stored_baselines(_seal(envelope), serial=SERIAL)
+
+
+def test_an_unsealed_change_fails_the_envelope_integrity_hash() -> None:
+    """The tables above re-seal on purpose; this proves the seal itself is checked."""
+
+    envelope = _baseline_envelope()
+    envelope["live_data_command_time"] = REVISION
+
+    with pytest.raises(NuveProtocolError, match="durable-payload integrity hash"):
+        validate_stored_baselines(envelope, serial=SERIAL)
 
 
 def test_the_unmutated_baseline_envelope_is_valid() -> None:
