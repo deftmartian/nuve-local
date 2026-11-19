@@ -244,6 +244,12 @@ Configure a weather entity as well so it can cover those periods, or make the se
 report on a schedule (for example a trigger-based template with a time-pattern
 trigger).
 
+Weather entities differ in how often they update. Check the entity's last-reported
+time in **Developer tools → States**: one that refreshes every few minutes can cover
+a quiet sensor, but one that refreshes hourly is fresh for only part of each hour.
+When the selected source changes, the thermostat's outdoor value can step by the
+difference between the two sources.
+
 ## 6. Direct the thermostat to Nuve Local
 
 ### Change the endpoint
