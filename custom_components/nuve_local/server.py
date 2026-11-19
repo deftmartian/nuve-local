@@ -44,7 +44,9 @@ from .const import (
     DEPLOYMENT_PROFILE_DIRECT_TLS,
     MAX_CONCURRENT_REQUESTS,
     MAX_REQUEST_SIZE,
+    MAX_UNKNOWN_ENDPOINT_KEYS,
     REQUEST_TIMEOUT_SECONDS,
+    UNKNOWN_ENDPOINT_OVERFLOW_PATH,
 )
 from .contractor import contractor_logo_signature
 from .errors import ControlNotReadyError, PersistenceUnavailableError
@@ -147,6 +149,7 @@ class NuveApiServer:
         self._token_lock = asyncio.Lock()
         self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
         self._logged_first_settings_upload = False
+        self._counted_unknown_endpoints: set[str] = set()
         self._contractor_logo_bytes = contractor_logo_bytes
         configured_hostname = str(config[CONF_API_HOSTNAME]).lower().rstrip(".")
         self._expected_hosts = {configured_hostname}
@@ -286,7 +289,7 @@ class NuveApiServer:
             self._runtime.rejected_requests += 1
             raise web.HTTPBadRequest(text="unexpected host")
 
-        self._runtime.count_endpoint(request.method, request.path)
+        self._runtime.count_endpoint(request.method, self._endpoint_count_path(request))
         if request.path == "/":
             return await handler(request)
 
@@ -360,6 +363,19 @@ class NuveApiServer:
         # participate in the delivery-time safety check.
         self._runtime.async_note_authenticated_contact(datetime.now(UTC))
         return await self._call_handler(request, handler)
+
+    def _endpoint_count_path(self, request: web.Request) -> str:
+        """Count routed paths as-is and bound the distinct unsupported ones."""
+
+        if request.match_info.handler != self._unknown:
+            return request.path
+        key = f"{request.method} {request.path}"
+        if key in self._counted_unknown_endpoints:
+            return request.path
+        if len(self._counted_unknown_endpoints) < MAX_UNKNOWN_ENDPOINT_KEYS:
+            self._counted_unknown_endpoints.add(key)
+            return request.path
+        return UNKNOWN_ENDPOINT_OVERFLOW_PATH
 
     async def _call_handler(self, request: web.Request, handler: Any) -> web.StreamResponse:
         """Run a validated route within the listener's resource limits."""
