@@ -71,6 +71,10 @@ TOKEN_PATTERN = r"[0-9a-fA-F]{64}"
 EXPECTED_HOSTS = frozenset({"devapi.nuvehvac.com", "devapi11.nuvehvac.com"})
 LIVENESS_TIMEOUT_SECONDS = 135
 REQUEST_TIMEOUT_SECONDS = 10
+# How often direct TLS checks its certificate files for a renewal, and how soon it
+# checks again after files that changed could not be loaded (a renewal mid-write).
+CERTIFICATE_RELOAD_INTERVAL_SECONDS = 3600
+CERTIFICATE_RELOAD_RETRY_SECONDS = 60
 MAX_CONCURRENT_REQUESTS = 4
 COMMAND_TIMEOUT_SECONDS = 75
 # In online mode the 1.5.x firmware emits sparse changes every ten seconds but
