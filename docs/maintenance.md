@@ -8,7 +8,8 @@ and Home Assistant version consistency.
 ## Continuous integration
 
 Forgejo CI (`.forgejo/workflows/check.yml`) runs on every push to `main` and every
-pull request. Each job must pass before merging:
+pull request. Treat every job as a merge gate; to enforce it, list each job's status
+check (`Check / <job> (pull_request)`) as required in the branch protection for `main`:
 
 | Job | Runs | Locally |
 | --- | --- | --- |

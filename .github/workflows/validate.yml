@@ -17,6 +17,8 @@ permissions:
 
 jobs:
   hacs:
+    # Only on github.com: if Forgejo ever reads this directory, skip rather than queue.
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     steps:
       # hacs/action publishes no current release tags; pin the reviewed main commit.
@@ -25,6 +27,7 @@ jobs:
           category: integration
 
   hassfest:
+    if: github.server_url == 'https://github.com'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7

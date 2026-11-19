@@ -23,11 +23,11 @@ trap 'rm -rf -- "$work"' EXIT
 
 echo "hassfest from Home Assistant Core ${version}"
 git clone --quiet --depth 1 --branch "$version" --filter=blob:none --sparse \
-  https://github.com/home-assistant/core.git "$work/core" 2>/dev/null
+  https://github.com/home-assistant/core.git "$work/core"
 git -C "$work/core" sparse-checkout set script packages/hassfest
 
 # Use the tool versions Core itself pins for hassfest.
-pin() { awk -F'==' -v n="$1" '$1 == n {print $0}' "$work/core"/requirements_test*.txt; }
+pin() { awk -F'==' -v n="$1" '$1 == n {print $0; exit}' "$work/core"/requirements_test*.txt; }
 tools=()
 for name in probatio tqdm pipdeptree; do
   spec=$(pin "$name")
