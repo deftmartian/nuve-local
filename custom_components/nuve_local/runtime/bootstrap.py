@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from ..commissioning import valid_technician_url
 from ..const import BOOTSTRAP_FIRMWARE_ALLOWLIST, BOOTSTRAP_WINDOW_SECONDS
-from ..errors import ControlNotReadyError, PersistenceUnavailableError
+from ..errors import ControlNotReadyError, PersistenceUnavailableError, require
 from ..protocol import (
     next_revision,
+    render_auto_mode_bootstrap_response,
+    render_settings_bootstrap_response,
 )
 from .rules import latest_revision
 from .transactions import RuntimeTransactions
@@ -186,3 +190,55 @@ class RuntimeBootstrap(RuntimeTransactions):
         self.bootstrap_revision = None
         self.bootstrap_settings_served = False
         self.bootstrap_auto_served = False
+
+    async def _async_serve_settings_bootstrap_locked(
+        self, requested_at: datetime
+    ) -> dict[str, Any]:
+        """Durably serve the one-shot non-applying Settings trap, or an empty body."""
+
+        if self.bootstrap_settings_served or not self._bootstrap_active(requested_at):
+            return {}
+        bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
+        bootstrap_technician_url = require(
+            self.bootstrap_technician_url, "bootstrap technician URL"
+        )
+        candidate = self.persistent_baselines()
+        bootstrap = copy.deepcopy(candidate["bootstrap"])
+        bootstrap["settings_served"] = True
+        candidate["bootstrap"] = bootstrap
+
+        def commit_bootstrap() -> None:
+            self.bootstrap_settings_served = True
+            self._notify_listeners()
+
+        await self.async_persist_and_commit(candidate, commit_bootstrap)
+        return render_settings_bootstrap_response(
+            serial=self.serial,
+            revision=bootstrap_revision,
+            technician_url=bootstrap_technician_url,
+        )
+
+    def _auto_bootstrap_due(self, requested_at: datetime) -> bool:
+        """Return whether the served Settings trap still needs its Auto companion."""
+
+        return (
+            self.bootstrap_settings_served
+            and not self.bootstrap_auto_served
+            and self._bootstrap_active(requested_at)
+        )
+
+    async def _async_serve_auto_bootstrap_locked(self) -> dict[str, Any]:
+        """Durably serve the non-applying Auto companion of the Settings trap."""
+
+        bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
+        candidate = self.persistent_baselines()
+        bootstrap = copy.deepcopy(candidate["bootstrap"])
+        bootstrap["auto_served"] = True
+        candidate["bootstrap"] = bootstrap
+
+        def commit_bootstrap() -> None:
+            self.bootstrap_auto_served = True
+            self._notify_listeners()
+
+        await self.async_persist_and_commit(candidate, commit_bootstrap)
+        return render_auto_mode_bootstrap_response(revision=bootstrap_revision)

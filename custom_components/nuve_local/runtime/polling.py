@@ -13,7 +13,6 @@ from ..protocol import (
     render_auto_mode_response,
     render_monitor_reset_response,
     render_monitor_wake_response,
-    render_settings_bootstrap_response,
     render_settings_response,
 )
 from ..trace import elapsed_ms
@@ -42,27 +41,7 @@ class RuntimePolling(RuntimeMonitor):
             self._tracer.record("poll", family="settings", result="received", at=requested_at)
             await self._async_clear_expired_bootstrap_locked(requested_at)
             if not self.has_settings_baseline:
-                if not self.bootstrap_settings_served and self._bootstrap_active(requested_at):
-                    bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
-                    bootstrap_technician_url = require(
-                        self.bootstrap_technician_url, "bootstrap technician URL"
-                    )
-                    candidate = self.persistent_baselines()
-                    bootstrap = copy.deepcopy(candidate["bootstrap"])
-                    bootstrap["settings_served"] = True
-                    candidate["bootstrap"] = bootstrap
-
-                    def commit_bootstrap() -> None:
-                        self.bootstrap_settings_served = True
-                        self._notify_listeners()
-
-                    await self.async_persist_and_commit(candidate, commit_bootstrap)
-                    return render_settings_bootstrap_response(
-                        serial=self.serial,
-                        revision=bootstrap_revision,
-                        technician_url=bootstrap_technician_url,
-                    )
-                return {}
+                return await self._async_serve_settings_bootstrap_locked(requested_at)
             if not self.canonical_response_safe:
                 return {}
             if not self.canonical_live_consistency_ready:
@@ -118,23 +97,8 @@ class RuntimePolling(RuntimeMonitor):
             await self._async_clear_expired_bootstrap_locked(requested_at)
             # Once the settings trap has been served, its non-applying Auto
             # companion must win over monitor-derived or restored Auto data.
-            if (
-                self.bootstrap_settings_served
-                and not self.bootstrap_auto_served
-                and self._bootstrap_active(requested_at)
-            ):
-                bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
-                candidate = self.persistent_baselines()
-                bootstrap = copy.deepcopy(candidate["bootstrap"])
-                bootstrap["auto_served"] = True
-                candidate["bootstrap"] = bootstrap
-
-                def commit_bootstrap() -> None:
-                    self.bootstrap_auto_served = True
-                    self._notify_listeners()
-
-                await self.async_persist_and_commit(candidate, commit_bootstrap)
-                return render_auto_mode_bootstrap_response(revision=bootstrap_revision)
+            if self._auto_bootstrap_due(requested_at):
+                return await self._async_serve_auto_bootstrap_locked()
             if not self.has_settings_baseline or not self.has_auto_mode_baseline:
                 return {}
             if not self.canonical_response_safe:
