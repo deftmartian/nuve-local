@@ -5,8 +5,6 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-import math
-from collections import deque
 from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
@@ -24,9 +22,6 @@ from ..const import (
     BOOTSTRAP_WINDOW_SECONDS,
     COMMAND_TIMEOUT_SECONDS,
     LIVENESS_TIMEOUT_SECONDS,
-    MAX_OUTDOOR_TEMPERATURE,
-    MIN_OUTDOOR_TEMPERATURE,
-    OUTDOOR_MAX_AGE_SECONDS,
     TEMP_CORRECTION_VERSIONS_BY_FIRMWARE,
 )
 from ..errors import (
@@ -51,13 +46,8 @@ from ..protocol import (
     render_settings_bootstrap_response,
     render_settings_response,
 )
-from ..trace import (
-    TRACE_EVENT_LIMIT,
-    RuntimeTraceEvent,
-    elapsed_ms,
-    sanitized_trace,
-    trace_event,
-)
+from ..trace import elapsed_ms
+from .outdoor import ForecastCache, OutdoorConditions
 from .records import PendingCommand, ResponseSender, UncertainCommand, serialize_uncertainty
 from .rules import (
     ACTIVE_SCHEDULE_TYPES,
@@ -74,6 +64,8 @@ from .rules import (
     valid_humidity,
     values_match,
 )
+from .timers import OneShotTimer
+from .tracing import RuntimeTracer
 
 __all__ = [
     "ACTIVE_SCHEDULE_TYPES",
@@ -106,15 +98,6 @@ class NuveRuntime:
     state: NuveState = field(default_factory=NuveState)
     endpoint_counts: dict[str, int] = field(default_factory=dict)
     rejected_requests: int = 0
-    outdoor_temperature_c: float | None = None
-    outdoor_observed_at: datetime | None = None
-    outdoor_humidity_percent: float | None = None
-    outdoor_weather: dict[str, str] | None = None
-    outdoor_location_name: str = "Local outdoor sensor"
-    outdoor_source: str = "unavailable"
-    forecast_payload: dict[str, Any] | None = None
-    forecast_updated_at: datetime | None = None
-    forecast_status: str = "not_configured"
     contractor_info_ready: bool = False
     settings_snapshot: dict[str, Any] | None = None
     settings_revision: str | None = None
@@ -140,8 +123,8 @@ class NuveRuntime:
     bootstrap_auto_served: bool = False
     authoritative_control_monitor_seen: bool = False
     _listeners: set[Callable[[], None]] = field(default_factory=set)
-    _liveness_timer: asyncio.TimerHandle | None = None
-    _bootstrap_timer: asyncio.TimerHandle | None = None
+    _liveness_timer: OneShotTimer = field(default_factory=OneShotTimer, init=False, repr=False)
+    _bootstrap_timer: OneShotTimer = field(default_factory=OneShotTimer, init=False, repr=False)
     _automatic_bootstrap_task: asyncio.Task[None] | None = field(
         default=None, init=False, repr=False
     )
@@ -152,19 +135,15 @@ class NuveRuntime:
     _monitor_resync_auto_companion_revision: str | None = None
     _persistence_listener: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None
     _transaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
-    _event_trace: deque[RuntimeTraceEvent] = field(
-        default_factory=lambda: deque(maxlen=TRACE_EVENT_LIMIT), init=False, repr=False
-    )
-    _last_traced_control_block_reason: str | None = field(default=None, init=False, repr=False)
-    _trace_enabled: bool = field(default=True, init=False, repr=False)
+    _tracer: RuntimeTracer = field(default_factory=RuntimeTracer, init=False, repr=False)
+    _outdoor: OutdoorConditions = field(default_factory=OutdoorConditions, init=False, repr=False)
+    _forecast: ForecastCache = field(default_factory=ForecastCache, init=False, repr=False)
     _stopped: bool = False
 
     def __post_init__(self) -> None:
         """Start the state-transition timeline at construction."""
 
-        reason = self.control_block_reason
-        self._last_traced_control_block_reason = reason
-        self._trace_event("control_block_reason", result=reason)
+        self._tracer.note_control_block_reason(self.control_block_reason)
 
     @property
     def has_settings_baseline(self) -> bool:
@@ -213,7 +192,7 @@ class NuveRuntime:
     def sanitized_event_trace(self) -> list[dict[str, Any]]:
         """Return a size-limited support timeline without protocol values."""
 
-        return sanitized_trace(self._event_trace)
+        return self._tracer.sanitized()
 
     @property
     def uncertain_outcome(self) -> bool:
@@ -422,16 +401,67 @@ class NuveRuntime:
     def outdoor_is_fresh(self) -> bool:
         """Return whether the projected outdoor temperature is safe to serve."""
 
-        if self.outdoor_temperature_c is None or self.outdoor_observed_at is None:
-            return False
-        age = (datetime.now(UTC) - self.outdoor_observed_at).total_seconds()
-        return 0 <= age <= OUTDOOR_MAX_AGE_SECONDS
+        return self._outdoor.is_fresh
+
+    @property
+    def outdoor_temperature_c(self) -> float | None:
+        """Return the last valid outdoor temperature in degrees Celsius."""
+
+        return self._outdoor.temperature_c
+
+    @property
+    def outdoor_observed_at(self) -> datetime | None:
+        """Return when the outdoor temperature was observed."""
+
+        return self._outdoor.observed_at
+
+    @property
+    def outdoor_humidity_percent(self) -> float | None:
+        """Return the last valid outdoor relative humidity."""
+
+        return self._outdoor.humidity_percent
+
+    @property
+    def outdoor_weather(self) -> dict[str, str] | None:
+        """Return the last valid outdoor weather icon and description."""
+
+        return self._outdoor.weather
+
+    @property
+    def outdoor_location_name(self) -> str:
+        """Return the outdoor source name shown on the thermostat."""
+
+        return self._outdoor.location_name
+
+    @property
+    def outdoor_source(self) -> str:
+        """Return the outdoor source kind, or ``unavailable``."""
+
+        return self._outdoor.source
 
     @property
     def forecast_healthy(self) -> bool:
         """Return whether a validated forecast is available for the device."""
 
-        return self.forecast_payload is not None and self.forecast_status == "ok"
+        return self._forecast.healthy
+
+    @property
+    def forecast_payload(self) -> dict[str, Any] | None:
+        """Return the cached validated forecast payload."""
+
+        return self._forecast.payload
+
+    @property
+    def forecast_updated_at(self) -> datetime | None:
+        """Return when the forecast status last changed."""
+
+        return self._forecast.updated_at
+
+    @property
+    def forecast_status(self) -> str:
+        """Return the non-secret forecast status."""
+
+        return self._forecast.status
 
     @property
     def fan_mode(self) -> int | None:
@@ -506,11 +536,11 @@ class NuveRuntime:
         started_at = datetime.now(UTC)
         if family is None and self._pending_command is not None:
             family = self._pending_command.kind
-        self._trace_event("persistence", family=family, result="started", at=started_at)
+        self._tracer.record("persistence", family=family, result="started", at=started_at)
         if self._persistence_listener is None:
             self.persistence_healthy = False
             self.persistence_fault_latched = True
-            self._trace_elapsed_event(
+            self._tracer.record_elapsed(
                 "persistence", started_at, family=family, result="unavailable"
             )
             raise PersistenceUnavailableError("no persistence coordinator is available")
@@ -523,7 +553,7 @@ class NuveRuntime:
         except asyncio.CancelledError as outer_cancel:
             if task.cancelled():
                 self._latch_persistence_fault()
-                self._trace_elapsed_event(
+                self._tracer.record_elapsed(
                     "persistence", started_at, family=family, result="cancelled"
                 )
                 raise PersistenceUnavailableError(
@@ -535,7 +565,7 @@ class NuveRuntime:
                 await task
             except asyncio.CancelledError as inner_cancel:
                 self._latch_persistence_fault()
-                self._trace_elapsed_event(
+                self._tracer.record_elapsed(
                     "persistence", started_at, family=family, result="cancelled"
                 )
                 raise PersistenceUnavailableError(
@@ -548,9 +578,11 @@ class NuveRuntime:
                     type(err).__name__,
                     err,
                 )
-                self._trace_elapsed_event("persistence", started_at, family=family, result="failed")
+                self._tracer.record_elapsed(
+                    "persistence", started_at, family=family, result="failed"
+                )
                 raise PersistenceUnavailableError from err
-            self._trace_elapsed_event(
+            self._tracer.record_elapsed(
                 "persistence", started_at, family=family, result="committed_after_cancel"
             )
             raise
@@ -561,9 +593,9 @@ class NuveRuntime:
                 type(err).__name__,
                 err,
             )
-            self._trace_elapsed_event("persistence", started_at, family=family, result="failed")
+            self._tracer.record_elapsed("persistence", started_at, family=family, result="failed")
             raise PersistenceUnavailableError from err
-        self._trace_elapsed_event("persistence", started_at, family=family, result="committed")
+        self._tracer.record_elapsed("persistence", started_at, family=family, result="committed")
 
     async def async_persist_and_commit(
         self,
@@ -643,10 +675,8 @@ class NuveRuntime:
         )
 
     def _schedule_bootstrap_expiry(self, expires_at: datetime) -> None:
-        if self._bootstrap_timer is not None:
-            self._bootstrap_timer.cancel()
         delay = max(0.0, (expires_at - datetime.now(UTC)).total_seconds())
-        self._bootstrap_timer = asyncio.get_running_loop().call_later(
+        self._bootstrap_timer.start(
             delay,
             lambda: asyncio.create_task(
                 self._async_expire_bootstrap(), name="Expire Nuve bootstrap journal"
@@ -655,7 +685,7 @@ class NuveRuntime:
 
     async def _async_expire_bootstrap(self) -> None:
         async with self._transaction_lock:
-            self._bootstrap_timer = None
+            self._bootstrap_timer.forget()
             if self._stopped or self.has_settings_baseline or self.bootstrap_armed_until is None:
                 return
             if datetime.now(UTC) < self.bootstrap_armed_until:
@@ -689,9 +719,10 @@ class NuveRuntime:
         await self.async_persist_and_commit(candidate, commit)
 
     def _clear_bootstrap(self, *, cancel_timer: bool = True) -> None:
-        if cancel_timer and self._bootstrap_timer is not None:
+        if cancel_timer:
             self._bootstrap_timer.cancel()
-        self._bootstrap_timer = None
+        else:
+            self._bootstrap_timer.forget()
         self.bootstrap_armed_until = None
         self.bootstrap_armed_at = None
         self.bootstrap_revision = None
@@ -825,12 +856,11 @@ class NuveRuntime:
         shadow.auto_mode_snapshot = copy.deepcopy(self.auto_mode_snapshot)
         shadow.uncertain_command = copy.deepcopy(self.uncertain_command)
         shadow._listeners = set()
-        shadow._liveness_timer = None
-        shadow._bootstrap_timer = None
+        shadow._liveness_timer = OneShotTimer()
+        shadow._bootstrap_timer = OneShotTimer()
         shadow._persistence_listener = None
         shadow._transaction_lock = asyncio.Lock()
-        shadow._event_trace = deque(maxlen=TRACE_EVENT_LIMIT)
-        shadow._trace_enabled = False
+        shadow._tracer = RuntimeTracer(enabled=False)
         dummy_future: asyncio.Future[str] | None = None
         pending = self._pending_command
         if pending is None:
@@ -902,7 +932,7 @@ class NuveRuntime:
         async with self._transaction_lock:
             pending = self._pending_command
             pending_kind = pending.kind if pending is not None else None
-            self._trace_event(
+            self._tracer.record(
                 "monitor_upload",
                 family="monitor",
                 result="full" if state.monitor_is_sync else "sparse",
@@ -921,7 +951,7 @@ class NuveRuntime:
                 self.current_temperature_observed_at = shadow.current_temperature_observed_at
                 self.current_temperature_source = shadow.current_temperature_source
                 self._notify_listeners()
-                self._trace_event(
+                self._tracer.record(
                     "monitor_confirmation", family=pending_kind, result="persistence_latched"
                 )
                 return
@@ -987,7 +1017,7 @@ class NuveRuntime:
         if not canonical_echo:
             self.last_settings_upload = received_at
             self.authoritative_control_monitor_seen = False
-        self._trace_event(
+        self._tracer.record(
             "upload_echo",
             family="settings",
             result=(
@@ -1047,7 +1077,7 @@ class NuveRuntime:
         if not canonical_echo:
             self.last_auto_mode_upload = received_at
             self.authoritative_control_monitor_seen = False
-        self._trace_event(
+        self._tracer.record(
             "upload_echo",
             family="auto",
             result=(
@@ -1419,7 +1449,7 @@ class NuveRuntime:
             if self.persistence_fault_latched:
                 raise PersistenceUnavailableError("canonical persistence requires reload")
             self.last_settings_poll = requested_at
-            self._trace_event("poll", family="settings", result="received", at=requested_at)
+            self._tracer.record("poll", family="settings", result="received", at=requested_at)
             await self._async_clear_expired_bootstrap_locked(requested_at)
             if not self.has_settings_baseline:
                 if not self.bootstrap_settings_served and self._bootstrap_active(requested_at):
@@ -1494,7 +1524,7 @@ class NuveRuntime:
         async with self._transaction_lock:
             if self.persistence_fault_latched:
                 raise PersistenceUnavailableError("canonical persistence requires reload")
-            self._trace_event("poll", family="auto", result="received", at=requested_at)
+            self._tracer.record("poll", family="auto", result="received", at=requested_at)
             await self._async_clear_expired_bootstrap_locked(requested_at)
             # Once the settings trap has been served, its non-applying Auto
             # companion must win over monitor-derived or restored Auto data.
@@ -1608,7 +1638,7 @@ class NuveRuntime:
             # Direct runtime callers are tests and internal probes; model an
             # immediate response at the supplied request boundary.
             delivered_at = requested_at
-        self._trace_event(
+        self._tracer.record(
             "command_delivery",
             family=pending.kind,
             result="body_sent",
@@ -1693,7 +1723,7 @@ class NuveRuntime:
             queued_baseline={key: copy.deepcopy(baseline[key]) for key in desired},
         )
         self._pending_command = pending
-        self._trace_event("command", family=kind, result="queued", at=pending.queued_at)
+        self._tracer.record("command", family=kind, result="queued", at=pending.queued_at)
         self._notify_listeners()
         return pending
 
@@ -2273,7 +2303,7 @@ class NuveRuntime:
         if pending is None:
             return
         self._pending_command = None
-        self._trace_event(
+        self._tracer.record(
             "command",
             family=pending.kind,
             result=result,
@@ -2297,55 +2327,18 @@ class NuveRuntime:
             if pending.future.done() and not pending.future.cancelled()
             else "not_confirmed"
         )
-        self._trace_event("monitor_confirmation", family=pending_kind, result=result)
+        self._tracer.record("monitor_confirmation", family=pending_kind, result=result)
         if result != "not_confirmed":
-            self._trace_event(
+            self._tracer.record(
                 "command",
                 family=pending_kind,
                 result=result,
                 duration_ms=elapsed_ms(pending.queued_at, datetime.now(UTC)),
             )
 
-    def _trace_elapsed_event(
-        self,
-        event: str,
-        started_at: datetime,
-        *,
-        family: Literal["settings", "auto", "monitor"] | None,
-        result: str,
-    ) -> None:
-        finished_at = datetime.now(UTC)
-        self._trace_event(
-            event,
-            family=family,
-            result=result,
-            duration_ms=elapsed_ms(started_at, finished_at),
-            at=finished_at,
-        )
-
-    def _trace_event(
-        self,
-        event: str,
-        *,
-        family: Literal["settings", "auto", "monitor"] | None = None,
-        result: str | None = None,
-        duration_ms: int | None = None,
-        at: datetime | None = None,
-    ) -> None:
-        if not self._trace_enabled:
-            return
-        self._event_trace.append(
-            trace_event(event, family=family, result=result, duration_ms=duration_ms, at=at)
-        )
-
     def _trace_control_block_transition(self) -> None:
-        if not self._trace_enabled:
-            return
-        reason = self.control_block_reason
-        if reason == self._last_traced_control_block_reason:
-            return
-        self._last_traced_control_block_reason = reason
-        self._trace_event("control_block_reason", result=reason)
+        if self._tracer.enabled:
+            self._tracer.note_control_block_reason(self.control_block_reason)
 
     def _effective_technician_url(self) -> str | None:
         """Use a configured QR target only after baseline capture is complete."""
@@ -2359,14 +2352,10 @@ class NuveRuntime:
 
         self.state = replace(self.state, available=True, last_seen=seen_at)
         self._notify_listeners()
-        if self._liveness_timer is not None:
-            self._liveness_timer.cancel()
-        self._liveness_timer = asyncio.get_running_loop().call_later(
-            LIVENESS_TIMEOUT_SECONDS, self._async_mark_unavailable
-        )
+        self._liveness_timer.start(LIVENESS_TIMEOUT_SECONDS, self._async_mark_unavailable)
 
     def _async_mark_unavailable(self) -> None:
-        self._liveness_timer = None
+        self._liveness_timer.forget()
         if not self.state.available:
             return
         self.authoritative_control_monitor_seen = False
@@ -2385,33 +2374,14 @@ class NuveRuntime:
     ) -> None:
         """Update the cached outdoor-temperature projection."""
 
-        if (
-            temperature_c is None
-            or not math.isfinite(temperature_c)
-            or not MIN_OUTDOOR_TEMPERATURE <= temperature_c <= MAX_OUTDOOR_TEMPERATURE
-        ):
-            self.outdoor_temperature_c = None
-            self.outdoor_observed_at = None
-            self.outdoor_humidity_percent = None
-            self.outdoor_weather = None
-            self.outdoor_location_name = name
-            self.outdoor_source = "unavailable"
-            self._notify_listeners()
-            return
-        if humidity_percent is not None and not valid_humidity(humidity_percent):
-            humidity_percent = None
-        if (
-            not isinstance(weather, dict)
-            or set(weather) != {"icon", "description"}
-            or not all(isinstance(value, str) and value for value in weather.values())
-        ):
-            weather = None
-        self.outdoor_temperature_c = temperature_c
-        self.outdoor_observed_at = observed_at or datetime.now(UTC)
-        self.outdoor_humidity_percent = humidity_percent
-        self.outdoor_weather = copy.deepcopy(weather)
-        self.outdoor_location_name = name
-        self.outdoor_source = source
+        self._outdoor.update(
+            temperature_c,
+            name,
+            humidity_percent=humidity_percent,
+            weather=weather,
+            observed_at=observed_at,
+            source=source,
+        )
         self._notify_listeners()
 
     def async_set_forecast(
@@ -2423,9 +2393,7 @@ class NuveRuntime:
     ) -> None:
         """Cache one already validated forecast or select the firmware-safe no-op."""
 
-        self.forecast_payload = copy.deepcopy(payload) if payload is not None else None
-        self.forecast_status = status
-        self.forecast_updated_at = updated_at or datetime.now(UTC)
+        self._forecast.update(payload, status=status, updated_at=updated_at)
         self._notify_listeners()
 
     async def async_shutdown(self) -> None:
@@ -2436,12 +2404,8 @@ class NuveRuntime:
             if self._automatic_bootstrap_task is not None:
                 self._automatic_bootstrap_task.cancel()
                 self._automatic_bootstrap_task = None
-            if self._liveness_timer is not None:
-                self._liveness_timer.cancel()
-                self._liveness_timer = None
-            if self._bootstrap_timer is not None:
-                self._bootstrap_timer.cancel()
-                self._bootstrap_timer = None
+            self._liveness_timer.cancel()
+            self._bootstrap_timer.cancel()
             if self._pending_command is not None:
                 self._complete_pending("stopped")
             self._listeners.clear()
