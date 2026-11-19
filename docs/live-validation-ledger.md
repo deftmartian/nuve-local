@@ -1,8 +1,8 @@
 # Reference-thermostat validation history
 
 These are dated tests on the reference thermostat, not its current state.
-The builds named below are pre-release builds of the integration, not public
-0.0.x releases.
+The builds in the 2026-08 sections are pre-release builds of the integration, not
+public 0.0.x releases. Later sections name the public release they checked.
 
 The canonical firmware for the rows below is recovery `appStherm` 1.5.8 SHA-256
 `2117a5456445fe57a851ecf09aa452a8d3a2a59d166d4c6f5475bb69d5151c8e`.
@@ -26,7 +26,37 @@ a 22 °C target.
 
 This was the state at the end of that test window. Home Assistant, integration,
 thermostat, or network changes may have changed it since then; current-state claims
-must be checked again.
+must be checked again. The [2026-11-19 check](#2026-11-19-release-007-outdoor-source-check)
+below is narrower: it covers deployment parity and outdoor conditions only.
+
+## 2026-11-19 release 0.0.7 outdoor-source check
+
+A read-only check of the public 0.0.7 release on the reference thermostat (firmware
+1.5.8) and Home Assistant 2026.11.2. No thermostat command or setting change was
+made.
+
+- **Deployment parity.** All 50 installed component files matched the release ZIP
+  byte-for-byte (ZIP SHA-256
+  `db524c0b2c04ab9ffe5b2745c7be7032cecea131d27cf9d46a731138b6e4bd42`). Home
+  Assistant loaded the component at 08:35 local time, and the thermostat completed
+  a full Settings upload to it one minute later.
+- **Before 0.0.7.** The configured outdoor temperature sensor is a template that
+  writes only when its value changes. On a steady morning it reported roughly once
+  an hour. Under 0.0.6 the thermostat's `/api/weather-current` request failed with
+  503 once a minute from about :36 to :07 past each hour, while that sensor was more
+  than 15 minutes old: 104 failures between 05:40 and 08:07. A fresh weather entity
+  was configured but never used, because the sensor always took precedence.
+- **After 0.0.7.** The sensor went quiet in the same way from 08:51 to 09:08 and
+  from 09:24 to 10:08. The thermostat recorded no weather failures through 11:13, a
+  period that under 0.0.6 would have produced about 60. Firmware 1.5.8 logs only
+  failed weather requests, so this is evidence by absence, matched against the
+  sensor's recorded quiet windows. No "outdoor data is stale" Repair was raised.
+- **Other health.** `appStherm` had 0 restarts in 21 days of uptime. The only
+  recurring Nuve warning in Home Assistant was the thermostat's 15-minute
+  performance-test schedule request, which Nuve Local rejects as unsupported by
+  design.
+
+Recorded as LV-015.
 
 ## 2026-08-11 first candidate pass
 
@@ -90,7 +120,8 @@ and DST remain explicitly outside the runtime allowlist.
 
 ## Historical reference-unit evidence
 
-Dates below identify the 2026-08-09 through 2026-08-10 validation window.
+Rows LV-001 to LV-014 come from the 2026-08-09 through 2026-08-10 validation window;
+later rows give their own date.
 “Restoration” is used only when the records show that the original value was
 restored, not simply that the service later appeared healthy.
 
@@ -110,6 +141,7 @@ restored, not simply that the service later appeared healthy.
 | LV-012 | Contractor branding and QR separation | C+D | Replacement wordmark rendered while the photographed Contact Contractor QR remained unchanged | Contractor metadata/logo route and separate QV4 consumers for branding, Technician Access QR, and hard-coded Contact Contractor URL | Branding result was confirmed; no unsupported Contact Contractor rewrite occurred | Branding works; the two QR paths are separate |
 | LV-013 | Event-queue privacy and draining | C | Valid event protobuf batches were accepted and drained | Schema validation and sender-side successful-delivery queue removal | Targets were discarded rather than logged, stored, or exposed as HA state | Historical PASS; no raw events retained in this repo |
 | LV-014 | IAQ category and pressure observations | C | Redacted long-term history showed populated values, reporting cadence, and sentinels | NRF-to-QML/monitor producer chains plus observed Home Assistant entities | Read-only observation; no calibration or sensor setting was changed | Transported category and positive-pressure values are understood; board algorithm remains `NRF-U01` |
+| LV-015 | Outdoor-source fallback (release 0.0.7) | C | With a change-only outdoor sensor and a fresh weather entity configured, weather requests that failed hourly under 0.0.6 stopped failing after 0.0.7 loaded (2026-11-19) | Thermostat journal failure times matched against the sensor's recorded quiet windows, before and after the upgrade; 50-file release parity | Read-only; no thermostat or HA setting was changed | PASS for firmware 1.5.8; successful requests are not logged by the firmware |
 
 ## Explicitly absent live proof
 
