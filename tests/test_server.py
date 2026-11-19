@@ -8,7 +8,6 @@ import struct
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
@@ -29,6 +28,8 @@ from custom_components.nuve_local.const import (
     CONF_TRUSTED_PROXY_IP,
     DEPLOYMENT_PROFILE_DIRECT_TLS,
     DEPLOYMENT_PROFILE_REVERSE_PROXY,
+    MAX_UNKNOWN_ENDPOINT_KEYS,
+    UNKNOWN_ENDPOINT_OVERFLOW_PATH,
 )
 from custom_components.nuve_local.contractor import contractor_logo_signature
 from custom_components.nuve_local.errors import ControlNotReadyError
@@ -38,11 +39,10 @@ from custom_components.nuve_local.server import NuveApiServer
 from custom_components.nuve_local.storage import _build_storage_envelope, validate_stored_baselines
 from tests.helpers import accept_auto_mode_snapshot, accept_settings_snapshot, settings_upload
 
-# The integration reports the current UTC offset for America/Halifax, which
-# changes with daylight saving time; a fixed -10800 failed every winter.
-HALIFAX_UTC_OFFSET = int(
-    datetime.now(ZoneInfo("America/Halifax")).utcoffset().total_seconds()  # type: ignore[union-attr]
-)
+# America/Puerto_Rico keeps UTC-4 all year, so the expected offset is a constant
+# and these tests do not depend on the date they run (Halifax failed every winter).
+TEST_TIME_ZONE = "America/Puerto_Rico"
+TEST_UTC_OFFSET = -4 * 3600
 
 SERIAL = "00-000-000000"
 TOKEN = "a" * 64
@@ -118,7 +118,7 @@ class FakeConfigEntries:
 
 @dataclass
 class FakeConfig:
-    time_zone: str = "America/Halifax"
+    time_zone: str = TEST_TIME_ZONE
 
 
 @dataclass
@@ -1399,7 +1399,7 @@ def test_weather_current_returns_only_observed_state_and_fails_stale() -> None:
         )
         runtime.async_set_forecast(
             {
-                "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
+                "city": {"name": "Amherst", "country": "CA", "timezone": TEST_UTC_OFFSET},
                 "list": [
                     {
                         "dt": int(observed_at.timestamp()),
@@ -1431,7 +1431,7 @@ def test_weather_current_returns_only_observed_state_and_fails_stale() -> None:
                         "temp_max": 11.0,
                         "humidity": 82.0,
                     },
-                    "timezone": HALIFAX_UTC_OFFSET,
+                    "timezone": TEST_UTC_OFFSET,
                     "sys": {"country": "CA"},
                     "weather": [{"icon": "02d", "description": "partly cloudy"}],
                 },
@@ -1472,7 +1472,7 @@ def test_forecast_projection_and_design_temperature_safe_noop() -> None:
 
             runtime.async_set_forecast(
                 {
-                    "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
+                    "city": {"name": "Amherst", "country": "CA", "timezone": TEST_UTC_OFFSET},
                     "list": [
                         {
                             "dt": 1786291200,
@@ -1493,7 +1493,7 @@ def test_forecast_projection_and_design_temperature_safe_noop() -> None:
                 "success": True,
                 "status": "ok",
                 "data": {
-                    "city": {"name": "Amherst", "country": "CA", "timezone": HALIFAX_UTC_OFFSET},
+                    "city": {"name": "Amherst", "country": "CA", "timezone": TEST_UTC_OFFSET},
                     "list": [
                         {
                             "dt": 1786291200,
@@ -1516,5 +1516,24 @@ def test_forecast_projection_and_design_temperature_safe_noop() -> None:
                 "data": {},
             }
         await runtime.async_shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_unsupported_paths_cannot_grow_the_endpoint_counter_without_bound() -> None:
+    async def scenario() -> None:
+        server, runtime, _ = _server()
+        async with TestClient(TestServer(server._create_app())) as client:
+            assert (await client.get("/", headers=HEADERS)).status == 200
+            for index in range(MAX_UNKNOWN_ENDPOINT_KEYS + 8):
+                await client.get(f"/probe/{index}", headers=HEADERS)
+            # A path already counted keeps its own key after the cap is reached.
+            await client.get("/probe/0", headers=HEADERS)
+
+        unknown = {key for key in runtime.endpoint_counts if key.startswith("GET /probe/")}
+        assert len(unknown) == MAX_UNKNOWN_ENDPOINT_KEYS
+        assert runtime.endpoint_counts["GET /probe/0"] == 2
+        assert runtime.endpoint_counts[f"GET {UNKNOWN_ENDPOINT_OVERFLOW_PATH}"] == 8
+        assert runtime.endpoint_counts["GET /"] == 1
 
     asyncio.run(scenario())

@@ -76,6 +76,10 @@ REQUEST_TIMEOUT_SECONDS = 10
 CERTIFICATE_RELOAD_INTERVAL_SECONDS = 3600
 CERTIFICATE_RELOAD_RETRY_SECONDS = 60
 MAX_CONCURRENT_REQUESTS = 4
+# Distinct unsupported paths counted individually in diagnostics; later ones share
+# one overflow bucket so a misbehaving client cannot grow the counter without bound.
+MAX_UNKNOWN_ENDPOINT_KEYS = 32
+UNKNOWN_ENDPOINT_OVERFLOW_PATH = "/<other unsupported>"
 COMMAND_TIMEOUT_SECONDS = 75
 # In online mode the 1.5.x firmware emits sparse changes every ten seconds but
 # only forces an unchanged full snapshot once per hour. Keep a ten-minute

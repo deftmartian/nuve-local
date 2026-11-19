@@ -6,7 +6,6 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from zoneinfo import ZoneInfo
 
 import pytest
 from homeassistant.exceptions import ConfigEntryNotReady
@@ -14,11 +13,10 @@ from homeassistant.exceptions import ConfigEntryNotReady
 from custom_components.nuve_local import async_setup_entry, async_unload_entry
 from custom_components.nuve_local.sources import validated_outdoor_temperature_c
 
-# The integration reports the current UTC offset for America/Halifax, which
-# changes with daylight saving time; a fixed -10800 failed every winter.
-HALIFAX_UTC_OFFSET = int(
-    datetime.now(ZoneInfo("America/Halifax")).utcoffset().total_seconds()  # type: ignore[union-attr]
-)
+# America/Puerto_Rico keeps UTC-4 all year, so the expected offset is a constant
+# and these tests do not depend on the date they run (Halifax failed every winter).
+TEST_TIME_ZONE = "America/Puerto_Rico"
+TEST_UTC_OFFSET = -4 * 3600
 
 
 @pytest.fixture(autouse=True)
@@ -340,7 +338,7 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
 
         @dataclass
         class FakeConfig:
-            time_zone: str = "America/Halifax"
+            time_zone: str = TEST_TIME_ZONE
             country: str = "CA"
 
         @dataclass
@@ -424,7 +422,7 @@ def test_setup_uses_current_override_and_caches_daily_weather(monkeypatch: Any) 
         assert runtime.forecast_payload["city"] == {
             "name": "Amherst",
             "country": "CA",
-            "timezone": HALIFAX_UTC_OFFSET,
+            "timezone": TEST_UTC_OFFSET,
         }
         assert runtime.forecast_payload["list"][0]["temp"] == {
             "day": 24.0,
@@ -489,7 +487,7 @@ def test_stalled_forecast_cannot_block_listener_start(monkeypatch: Any) -> None:
 
         @dataclass
         class FakeConfig:
-            time_zone: str = "America/Halifax"
+            time_zone: str = TEST_TIME_ZONE
             country: str = "CA"
 
         @dataclass
@@ -609,7 +607,7 @@ async def _forecast_source_updates_do_not_accumulate_refresh_tasks(monkeypatch: 
 
     @dataclass
     class FakeConfig:
-        time_zone: str = "America/Halifax"
+        time_zone: str = TEST_TIME_ZONE
         country: str = "CA"
 
     @dataclass
@@ -727,7 +725,7 @@ def test_platform_setup_failure_releases_forecast_subscriptions(monkeypatch: Any
 
         @dataclass
         class FakeConfig:
-            time_zone: str = "America/Halifax"
+            time_zone: str = TEST_TIME_ZONE
             country: str = "CA"
 
         @dataclass
