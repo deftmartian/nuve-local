@@ -42,6 +42,7 @@ from ..errors import (
     ControlStateChangedError,
     PersistenceUnavailableError,
     RuntimeStoppedError,
+    require,
 )
 from ..models import NuveMode, NuveState, NuveSystemType
 from ..protocol import (
@@ -319,14 +320,14 @@ class NuveRuntime:
             return "target_temperature_missing"
         if self.state.mode not in CONTROL_SAFE_MODES:
             return "unsupported_mode"
-        assert self.last_monitor_upload is not None
+        # monitor_is_fresh proved the upload time; the canonical and Auto
+        # checks above proved both baselines for _live_state_matches_baselines.
+        last_monitor_upload = require(self.last_monitor_upload, "fresh monitor upload time")
         if (
             self.last_settings_upload is not None
-            and self.last_monitor_upload < self.last_settings_upload
+            and last_monitor_upload < self.last_settings_upload
         ):
             return "settings_newer_than_monitor"
-        assert self.settings_snapshot is not None
-        assert self.auto_mode_snapshot is not None
         if not self._live_state_matches_baselines():
             return "baseline_mismatch"
         return None
@@ -748,17 +749,21 @@ class NuveRuntime:
         ):
             self.authoritative_control_monitor_seen = False
 
-    def _monitor_sample_is_current(self, state: NuveState, received_at: datetime) -> bool:
-        """Reject missing, buffered, future, and out-of-order monitor samples."""
+    def _current_monitor_sample_time(
+        self, state: NuveState, received_at: datetime
+    ) -> datetime | None:
+        """Return the sample time, or None for missing, buffered, future, or stale samples."""
 
         sample_time = state.sample_time
-        return not (
+        if (
             sample_time is None
             or sample_time.tzinfo is None
             or sample_time > received_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
             or sample_time < received_at - timedelta(seconds=MONITOR_MAX_AGE_SECONDS)
             or (self.state.sample_time is not None and sample_time <= self.state.sample_time)
-        )
+        ):
+            return None
+        return sample_time
 
     def _monitor_fields(
         self, state: NuveState, *, sample_time: datetime
@@ -822,7 +827,8 @@ class NuveRuntime:
         current = self.state
         received_at = state.last_seen or datetime.now(UTC)
         self._note_monitor_upload(received_at)
-        if not self._monitor_sample_is_current(state, received_at):
+        sample_time = self._current_monitor_sample_time(state, received_at)
+        if sample_time is None:
             # Authentication/liveness is independent from telemetry authority.
             self.async_update_state(
                 replace(
@@ -833,8 +839,6 @@ class NuveRuntime:
             )
             return False
 
-        sample_time = state.sample_time
-        assert sample_time is not None
         monitor_fields, preserve_newer_temperature = self._monitor_fields(
             state, sample_time=sample_time
         )
@@ -853,7 +857,7 @@ class NuveRuntime:
             self.current_temperature_source = "monitor"
         self._update_full_monitor_authority(state)
         confirmed = self._confirm_from_monitor(state)
-        persistent_changed = self._merge_monitor_into_baselines(state)
+        persistent_changed = self._merge_monitor_into_baselines(state, sample_time=sample_time)
         uncertainty_cleared = self._resolve_uncertainty_from_monitor(state)
         return confirmed or persistent_changed or uncertainty_cleared
 
@@ -1339,42 +1343,38 @@ class NuveRuntime:
     def _canonical_settings_response(self) -> dict[str, Any]:
         """Render the saved device state after the metadata checks pass."""
 
-        assert self.settings_revision is not None
-        assert self.settings_snapshot is not None
-        technician_url = self._effective_technician_url()
-        assert technician_url is not None
-        assert self.temp_correction_version is not None
         return render_settings_response(
             serial=self.serial,
-            revision=self.settings_revision,
-            settings=self._with_live_data_command(self.settings_snapshot),
-            technician_url=technician_url,
-            temp_correction_version=self.temp_correction_version,
+            revision=require(self.settings_revision, "settings revision"),
+            settings=self._with_live_data_command(
+                require(self.settings_snapshot, "settings baseline")
+            ),
+            technician_url=require(self._effective_technician_url(), "technician URL"),
+            temp_correction_version=require(
+                self.temp_correction_version, "temperature correction version"
+            ),
         )
 
     def _schedule_preserving_settings_response(self) -> dict[str, Any]:
         """Keep a local schedule intact without replaying server-owned schedule state."""
 
-        assert self.settings_revision is not None
-        assert self.settings_snapshot is not None
-        technician_url = self._effective_technician_url()
-        assert technician_url is not None
+        revision = require(self.settings_revision, "settings revision")
+        settings = require(self.settings_snapshot, "settings baseline")
         return render_monitor_wake_response(
             serial=self.serial,
-            revision=self.settings_revision,
-            technician_url=technician_url,
-            messages=self.settings_snapshot["messages"],
-            command_time=self.live_data_command_time or self.settings_revision,
+            revision=revision,
+            technician_url=require(self._effective_technician_url(), "technician URL"),
+            messages=settings["messages"],
+            command_time=self.live_data_command_time or revision,
         )
 
     def _canonical_auto_mode_response(self) -> dict[str, Any]:
         """Return the last confirmed Auto snapshot without applying a queued change."""
 
-        assert self.auto_mode_revision is not None
-        assert self.auto_mode_snapshot is not None
+        revision = require(self.auto_mode_revision, "Auto revision")
         return render_auto_mode_response(
-            revision=self.auto_mode_revision,
-            settings=self.auto_mode_snapshot,
+            revision=revision,
+            settings=require(self.auto_mode_snapshot, "Auto baseline"),
         )
 
     def _reject_blocked_pending(self, pending: PendingCommand) -> dict[str, Any] | None:
@@ -1398,22 +1398,21 @@ class NuveRuntime:
     ) -> dict[str, Any]:
         """Cycle monitor offline then online without supplying HVAC state."""
 
-        assert self.settings_snapshot is not None
-        assert self.settings_revision is not None
-        technician_url = self._effective_technician_url()
-        assert technician_url is not None
+        settings = require(self.settings_snapshot, "settings baseline")
+        settings_revision = require(self.settings_revision, "settings revision")
+        technician_url = require(self._effective_technician_url(), "technician URL")
 
         if self._monitor_resync_next == "reset":
             response = render_monitor_reset_response(
                 serial=self.serial,
-                revision=self.settings_revision,
+                revision=settings_revision,
                 technician_url=technician_url,
-                messages=self.settings_snapshot["messages"],
+                messages=settings["messages"],
             )
             next_phase: Literal["reset", "wake"] = "wake"
         else:
             prior = self._latest_revision(
-                self._latest_revision(self.settings_revision, self.settings_revision_floor),
+                self._latest_revision(settings_revision, self.settings_revision_floor),
                 self._latest_revision(
                     self._latest_revision(
                         self.live_data_command_time,
@@ -1430,9 +1429,9 @@ class NuveRuntime:
             self._monitor_wake_command_time = command_time
             response = render_monitor_wake_response(
                 serial=self.serial,
-                revision=self.settings_revision,
+                revision=settings_revision,
                 technician_url=technician_url,
-                messages=self.settings_snapshot["messages"],
+                messages=settings["messages"],
                 command_time=command_time,
             )
             next_phase = "reset"
@@ -1469,8 +1468,10 @@ class NuveRuntime:
             await self._async_clear_expired_bootstrap_locked(requested_at)
             if not self.has_settings_baseline:
                 if not self.bootstrap_settings_served and self._bootstrap_active(requested_at):
-                    assert self.bootstrap_revision is not None
-                    assert self.bootstrap_technician_url is not None
+                    bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
+                    bootstrap_technician_url = require(
+                        self.bootstrap_technician_url, "bootstrap technician URL"
+                    )
                     candidate = self.persistent_baselines()
                     bootstrap = copy.deepcopy(candidate["bootstrap"])
                     bootstrap["settings_served"] = True
@@ -1483,8 +1484,8 @@ class NuveRuntime:
                     await self.async_persist_and_commit(candidate, commit_bootstrap)
                     return render_settings_bootstrap_response(
                         serial=self.serial,
-                        revision=self.bootstrap_revision,
-                        technician_url=self.bootstrap_technician_url,
+                        revision=bootstrap_revision,
+                        technician_url=bootstrap_technician_url,
                     )
                 return {}
             if not self.canonical_response_safe:
@@ -1505,17 +1506,15 @@ class NuveRuntime:
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
-                assert pending.revision is not None
-                technician_url = self._effective_technician_url()
-                assert technician_url is not None
-                temp_correction_version = self.temp_correction_version
-                assert temp_correction_version is not None
+                revision = require(pending.revision, "delivered command revision")
+                technician_url = require(self._effective_technician_url(), "technician URL")
+                temp_correction_version = require(
+                    self.temp_correction_version, "temperature correction version"
+                )
                 response = render_settings_response(
                     serial=self.serial,
-                    revision=pending.revision,
-                    settings=self._with_live_data_command(
-                        pending.payload, command_time=pending.revision
-                    ),
+                    revision=revision,
+                    settings=self._with_live_data_command(pending.payload, command_time=revision),
                     technician_url=technician_url,
                     temp_correction_version=temp_correction_version,
                 )
@@ -1549,7 +1548,7 @@ class NuveRuntime:
                 and not self.bootstrap_auto_served
                 and self._bootstrap_active(requested_at)
             ):
-                assert self.bootstrap_revision is not None
+                bootstrap_revision = require(self.bootstrap_revision, "bootstrap revision")
                 candidate = self.persistent_baselines()
                 bootstrap = copy.deepcopy(candidate["bootstrap"])
                 bootstrap["auto_served"] = True
@@ -1560,7 +1559,7 @@ class NuveRuntime:
                     self._notify_listeners()
 
                 await self.async_persist_and_commit(candidate, commit_bootstrap)
-                return render_auto_mode_bootstrap_response(revision=self.bootstrap_revision)
+                return render_auto_mode_bootstrap_response(revision=bootstrap_revision)
             if not self.has_settings_baseline or not self.has_auto_mode_baseline:
                 return {}
             if not self.canonical_response_safe:
@@ -1582,9 +1581,8 @@ class NuveRuntime:
                     blocked = self._reject_blocked_pending(pending)
                     if blocked is not None:
                         return blocked
-                assert pending.revision is not None
                 response = render_auto_mode_response(
-                    revision=pending.revision,
+                    revision=require(pending.revision, "delivered command revision"),
                     settings=pending.payload,
                 )
                 return await self._async_deliver_pending_response(
@@ -1692,13 +1690,13 @@ class NuveRuntime:
 
         async with self._transaction_lock:
             self._assert_ready("settings")
-            assert self.settings_snapshot is not None
+            baseline = require(self.settings_snapshot, "settings baseline")
             desired = validated_settings_changes(changes)
-            desired = expand_settings_changes(self.settings_snapshot, desired)
-            desired = self._changed_fields(desired, self.settings_snapshot)
+            desired = expand_settings_changes(baseline, desired)
+            desired = self._changed_fields(desired, baseline)
             if not desired:
                 return
-            payload = self._command_payload(self.settings_snapshot, desired)
+            payload = self._command_payload(baseline, desired)
             pending = self._queue_command_locked("settings", desired, payload)
         await self._wait_for_command(pending)
 
@@ -1707,12 +1705,12 @@ class NuveRuntime:
 
         async with self._transaction_lock:
             self._assert_ready("auto")
-            assert self.auto_mode_snapshot is not None
+            baseline = require(self.auto_mode_snapshot, "Auto baseline")
             desired = validated_auto_changes(changes)
-            desired = self._changed_fields(desired, self.auto_mode_snapshot)
+            desired = self._changed_fields(desired, baseline)
             if not desired:
                 return
-            payload = self._command_payload(self.auto_mode_snapshot, desired)
+            payload = self._command_payload(baseline, desired)
             if float(payload["auto_temp_low"]) >= float(payload["auto_temp_high"]):
                 raise ControlNotReadyError
             pending = self._queue_command_locked("auto", desired, payload)
@@ -1727,8 +1725,10 @@ class NuveRuntime:
         if self._pending_command is not None:
             raise ControlBusyError
         future = asyncio.get_running_loop().create_future()
-        baseline = self.settings_snapshot if kind == "settings" else self.auto_mode_snapshot
-        assert baseline is not None
+        baseline = require(
+            self.settings_snapshot if kind == "settings" else self.auto_mode_snapshot,
+            f"{kind} baseline",
+        )
         pending = PendingCommand(
             kind=kind,
             desired=copy.deepcopy(desired),
@@ -1994,8 +1994,8 @@ class NuveRuntime:
     def _live_state_matches_baselines(self) -> bool:
         """Require whole-snapshot baselines to agree with fresh telemetry."""
 
-        assert self.settings_snapshot is not None
-        assert self.auto_mode_snapshot is not None
+        settings = require(self.settings_snapshot, "settings baseline")
+        auto_mode = require(self.auto_mode_snapshot, "Auto baseline")
         expected_system_type = self.setting("system", "type")
         state_system_type = self.state.system_type
         actual_system_type = (
@@ -2009,9 +2009,9 @@ class NuveRuntime:
                     "mode_id": int(self.state.mode) if self.state.mode is not None else None,
                 },
                 {
-                    "temp": self.settings_snapshot.get("temp"),
-                    "humidity": self.settings_snapshot.get("humidity"),
-                    "mode_id": self.settings_snapshot.get("mode_id"),
+                    "temp": settings.get("temp"),
+                    "humidity": settings.get("humidity"),
+                    "mode_id": settings.get("mode_id"),
                 },
             )
             and actual_system_type == expected_system_type
@@ -2020,7 +2020,7 @@ class NuveRuntime:
                     "auto_temp_low": self.state.auto_temperature_low,
                     "auto_temp_high": self.state.auto_temperature_high,
                 },
-                self.auto_mode_snapshot,
+                auto_mode,
             )
         )
 
@@ -2159,17 +2159,15 @@ class NuveRuntime:
         self.auto_revision_floor = self.auto_mode_revision
         return True
 
-    def _merge_monitor_into_baselines(self, state: NuveState) -> bool:
+    def _merge_monitor_into_baselines(self, state: NuveState, *, sample_time: datetime) -> bool:
         """Keep future whole-snapshot writes aligned with device-local changes."""
 
-        assert state.sample_time is not None
-        seen_at = state.sample_time
+        seen_at = sample_time
         pending = self._pending_command
         evidence_is_post_queue = bool(
             pending is not None
             and not pending.delivered
-            and state.sample_time
-            > pending.queued_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
+            and sample_time > pending.queued_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
         )
         changed = self._merge_monitor_settings_baseline(
             state,
@@ -2282,7 +2280,12 @@ class NuveRuntime:
             or not pending.delivered
             or pending.delivered_at is None
             or state.sample_time is None
-            or not self._monitor_evidence_is_post_delivery(state, pending)
+            or not self._monitor_evidence_is_post_delivery(
+                state,
+                pending,
+                delivered_at=pending.delivered_at,
+                sample_time=state.sample_time,
+            )
         ):
             return False
         if pending.kind == "settings":
@@ -2300,8 +2303,7 @@ class NuveRuntime:
                 ),
                 now=state.sample_time,
             )
-            assert self.settings_snapshot is not None
-            confirmed_settings = copy.deepcopy(self.settings_snapshot)
+            confirmed_settings = copy.deepcopy(require(self.settings_snapshot, "settings baseline"))
             confirmed_settings.update(copy.deepcopy(pending.desired))
             self.settings_snapshot = confirmed_settings
             self.settings_revision = confirmed_revision
@@ -2323,8 +2325,7 @@ class NuveRuntime:
                 ),
                 now=state.sample_time,
             )
-            assert self.auto_mode_snapshot is not None
-            confirmed_auto = copy.deepcopy(self.auto_mode_snapshot)
+            confirmed_auto = copy.deepcopy(require(self.auto_mode_snapshot, "Auto baseline"))
             confirmed_auto.update(copy.deepcopy(pending.desired))
             self.auto_mode_snapshot = confirmed_auto
             self.auto_mode_revision = confirmed_revision
@@ -2337,19 +2338,20 @@ class NuveRuntime:
     def _monitor_evidence_is_post_delivery(
         state: NuveState,
         pending: PendingCommand,
+        *,
+        delivered_at: datetime,
+        sample_time: datetime,
     ) -> bool:
         """Order monitor evidence across device-second and server-subsecond clocks."""
 
-        assert pending.delivered_at is not None
-        assert state.sample_time is not None
-        if state.sample_time > pending.delivered_at:
+        if sample_time > delivered_at:
             return True
 
         echo_received_at = pending.coherent_echo_received_at
         if (
             echo_received_at is None
             or state.last_seen is None
-            or echo_received_at <= pending.delivered_at
+            or echo_received_at <= delivered_at
             or state.last_seen <= echo_received_at
         ):
             return False
@@ -2359,8 +2361,8 @@ class NuveRuntime:
         # second can therefore sort before the server's microsecond boundary.
         # Accept it only after a coherent post-delivery full Settings echo and
         # a later monitor HTTP receipt establish the missing causal order.
-        delivery_second = pending.delivered_at.replace(microsecond=0)
-        return state.sample_time >= delivery_second
+        delivery_second = delivered_at.replace(microsecond=0)
+        return sample_time >= delivery_second
 
     def _complete_pending(self, result: str) -> None:
         pending = self._pending_command
