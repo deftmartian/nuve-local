@@ -349,6 +349,10 @@
     "schedule_authority_block": {
       "title": "A Nuve schedule blocks Settings writes",
       "description": "A schedule is active or its status is stale. Settings changes could erase it, so disable the schedule on the thermostat and wait for a fresh No Schedule update."
+    },
+    "outdoor_data_stale": {
+      "title": "Nuve outdoor data is stale",
+      "description": "No configured outdoor source (temperature sensor or weather entity) has reported in the last 15 minutes, so the thermostat is not receiving outdoor conditions. Choose sources that report at least every 15 minutes. A sensor that only updates when its value changes can look stale while it is working; a weather entity can cover for it when both are configured."
     }
   },
   "exceptions": {

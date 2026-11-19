@@ -11,7 +11,9 @@ from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemT
 from custom_components.nuve_local.repairs import (
     BASELINE_ISSUE,
     FIRMWARE_ISSUE,
+    ISSUE_KINDS,
     MONITOR_ISSUE,
+    OUTDOOR_ISSUE,
     PERSISTENCE_ISSUE,
     SCHEDULE_ISSUE,
     UNCERTAIN_ISSUE,
@@ -120,7 +122,7 @@ def test_manager_deduplicates_clears_and_applies_schedule_grace(monkeypatch: Any
 
         clean = NuveRepairManager(object(), "entry-clean", _ready_runtime())  # type: ignore[arg-type]
         clean.start()
-        assert len(deleted) == 6
+        assert len(deleted) == len(ISSUE_KINDS)
         clean.shutdown()
         deleted.clear()
 
@@ -170,7 +172,33 @@ def test_entry_removal_deletes_only_stable_private_issue_ids(monkeypatch: Any) -
     entry_id = "private-config-entry"
     delete_entry_issues(object(), entry_id)  # type: ignore[arg-type]
 
-    assert len(deleted) == 6
-    assert len(set(deleted)) == 6
+    assert len(deleted) == len(ISSUE_KINDS)
+    assert len(set(deleted)) == len(ISSUE_KINDS)
     assert all(entry_id not in repair_id for repair_id in deleted)
     assert issue_id(entry_id, FIRMWARE_ISSUE) in deleted
+
+
+def test_stale_outdoor_data_is_a_repair_only_when_a_source_is_configured() -> None:
+    runtime = _ready_runtime()
+    # No outdoor source configured: missing outdoor data is the operator's choice.
+    assert OUTDOOR_ISSUE not in repair_conditions(runtime)
+
+    runtime.outdoor_sources_configured = True
+    assert OUTDOOR_ISSUE in repair_conditions(runtime)
+
+    runtime.async_set_outdoor_temperature(
+        4.0, "Garden", observed_at=datetime.now(UTC), source="override_sensor"
+    )
+    assert OUTDOOR_ISSUE not in repair_conditions(runtime)
+
+    runtime.async_set_outdoor_temperature(
+        4.0,
+        "Garden",
+        observed_at=datetime.now(UTC) - timedelta(minutes=16),
+        source="override_sensor",
+    )
+    assert OUTDOOR_ISSUE in repair_conditions(runtime)
+
+    # The thermostat uses outdoor data even when Home Assistant control is off.
+    runtime.control_enabled = False
+    assert OUTDOOR_ISSUE in repair_conditions(runtime)

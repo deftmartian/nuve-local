@@ -227,6 +227,29 @@ options and start another window.
 
 In direct mode, verify the listener certificate before changing the endpoint.
 
+### Weather sources (optional)
+
+The thermostat shows outdoor conditions and uses the outdoor temperature in its own
+equipment logic. To supply them, open **Weather sources** in the integration options
+and choose an outdoor temperature sensor, a weather entity, or both.
+
+A source counts as fresh while it has reported within the last 15 minutes. The
+temperature sensor is preferred while it is fresh. When it stops reporting, a fresh
+weather entity takes over. When no source is fresh, the thermostat receives no
+outdoor data, and after five minutes a Repairs issue says so.
+
+A sensor that writes its state only when the value changes, such as some
+template or averaging sensors, can look stale on a steady day while it is working.
+Configure a weather entity as well so it can cover those periods, or make the sensor
+report on a schedule (for example a trigger-based template with a time-pattern
+trigger).
+
+Weather entities differ in how often they update. Check the entity's last-reported
+time in **Developer tools → States**: one that refreshes every few minutes can cover
+a quiet sensor, but one that refreshes hourly is fresh for only part of each hour.
+When the selected source changes, the thermostat's outdoor value can step by the
+difference between the two sources.
+
 ## 6. Direct the thermostat to Nuve Local
 
 ### Change the endpoint

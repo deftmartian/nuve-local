@@ -88,9 +88,14 @@ COMMAND_TIMEOUT_SECONDS = 75
 MONITOR_MAX_AGE_SECONDS = 70 * 60
 MONITOR_FUTURE_SKEW_SECONDS = 30
 # Operational fail-closed policy: weather older than fifteen minutes is not
-# described as fresh to compressor/AUX lockout logic. Operators should select a
-# local source that reports at least twice inside this window.
+# described as fresh to compressor/AUX lockout logic. A source is fresh while Home
+# Assistant has recorded a report from it (its last_reported time) inside this
+# window; a sensor that writes only when its value changes can look stale while it
+# is working. The weather entity covers a quiet override sensor when it is fresh.
 OUTDOOR_MAX_AGE_SECONDS = 900
+# How often the configured sources are re-checked, so a source that goes quiet is
+# noticed (and the other source used) without waiting for a state event.
+OUTDOOR_RECHECK_SECONDS = 60
 FORECAST_REFRESH_MINUTES = 45
 FORECAST_REQUEST_TIMEOUT_SECONDS = 10
 BOOTSTRAP_WINDOW_SECONDS = 120
