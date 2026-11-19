@@ -5,7 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import logging
-from collections.abc import Callable, Coroutine, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -48,6 +48,7 @@ from ..protocol import (
 )
 from ..trace import elapsed_ms
 from .outdoor import ForecastCache, OutdoorConditions
+from .persistence import PersistenceListener, PersistenceTransactions
 from .records import PendingCommand, ResponseSender, UncertainCommand, serialize_uncertainty
 from .rules import (
     ACTIVE_SCHEDULE_TYPES,
@@ -113,9 +114,6 @@ class NuveRuntime:
     current_temperature_observed_at: datetime | None = None
     current_temperature_source: Literal["monitor", "current_sensors", "settings"] | None = None
     uncertain_command: UncertainCommand | None = None
-    persistence_healthy: bool = True
-    persistence_fault_latched: bool = False
-    persistence_recovered_from_previous: bool = False
     bootstrap_armed_at: datetime | None = None
     bootstrap_armed_until: datetime | None = None
     bootstrap_revision: str | None = None
@@ -133,17 +131,49 @@ class NuveRuntime:
     _monitor_resync_next: Literal["reset", "wake"] = "reset"
     _monitor_wake_command_time: str | None = None
     _monitor_resync_auto_companion_revision: str | None = None
-    _persistence_listener: Callable[[dict[str, Any]], Coroutine[Any, Any, None]] | None = None
-    _transaction_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     _tracer: RuntimeTracer = field(default_factory=RuntimeTracer, init=False, repr=False)
     _outdoor: OutdoorConditions = field(default_factory=OutdoorConditions, init=False, repr=False)
     _forecast: ForecastCache = field(default_factory=ForecastCache, init=False, repr=False)
+    _persistence: PersistenceTransactions = field(init=False, repr=False)
     _stopped: bool = False
 
     def __post_init__(self) -> None:
-        """Start the state-transition timeline at construction."""
+        """Wire the persistence latch, then start the state-transition timeline."""
 
+        self._persistence = PersistenceTransactions(
+            tracer=self._tracer, on_fault=self._notify_listeners
+        )
         self._tracer.note_control_block_reason(self.control_block_reason)
+
+    @property
+    def persistence_healthy(self) -> bool:
+        """Return whether the last durable transaction completed cleanly."""
+
+        return self._persistence.healthy
+
+    @persistence_healthy.setter
+    def persistence_healthy(self, value: bool) -> None:
+        self._persistence.healthy = value
+
+    @property
+    def persistence_fault_latched(self) -> bool:
+        """Return whether an ambiguous storage result requires a reload."""
+
+        return self._persistence.fault_latched
+
+    @persistence_fault_latched.setter
+    def persistence_fault_latched(self, value: bool) -> None:
+        self._persistence.fault_latched = value
+
+    @property
+    def persistence_recovered_from_previous(self) -> bool:
+        """Return whether restored baselines came from the previous storage copy."""
+
+        return self._persistence.recovered_from_previous
+
+    @persistence_recovered_from_previous.setter
+    def persistence_recovered_from_previous(self, value: bool) -> None:
+        self._persistence.recovered_from_previous = value
 
     @property
     def has_settings_baseline(self) -> bool:
@@ -240,7 +270,7 @@ class NuveRuntime:
             not self._stopped
             and self.paired
             and self.persistence_healthy
-            and self._persistence_listener is not None
+            and self._persistence.listener is not None
             and self.state.available
             and self.monitor_is_fresh
             and not self.has_settings_baseline
@@ -371,7 +401,7 @@ class NuveRuntime:
             return "persistence_fault_latched"
         if not self.persistence_healthy:
             return "persistence_unhealthy"
-        if self._persistence_listener is None:
+        if self._persistence.listener is None:
             return "persistence_listener_missing"
         if not self.has_settings_baseline:
             return "settings_baseline_missing"
@@ -483,19 +513,17 @@ class NuveRuntime:
         self.paired = True
         self._notify_listeners()
 
-    def async_set_persistence_listener(
-        self, listener: Callable[[dict[str, Any]], Coroutine[Any, Any, None]]
-    ) -> None:
+    def async_set_persistence_listener(self, listener: PersistenceListener) -> None:
         """Register a callback used when uncertainty changes outside a request."""
 
-        self._persistence_listener = listener
+        self._persistence.listener = listener
         self._schedule_automatic_bootstrap_if_ready()
 
     @property
     def persistence_lock(self) -> asyncio.Lock:
         """Return the lock that serializes durable baseline and journal writes."""
 
-        return self._transaction_lock
+        return self._persistence.lock
 
     def _schedule_automatic_bootstrap_if_ready(self) -> None:
         """Start at most one proven bootstrap window when every gate is ready."""
@@ -525,78 +553,6 @@ class NuveRuntime:
         finally:
             self._automatic_bootstrap_task = None
 
-    async def _async_persist_candidate(
-        self,
-        candidate: dict[str, Any],
-        *,
-        family: Literal["settings", "auto"] | None = None,
-    ) -> None:
-        """Persist and latch any ambiguous storage failure fail-closed."""
-
-        started_at = datetime.now(UTC)
-        if family is None and self._pending_command is not None:
-            family = self._pending_command.kind
-        self._tracer.record("persistence", family=family, result="started", at=started_at)
-        if self._persistence_listener is None:
-            self.persistence_healthy = False
-            self.persistence_fault_latched = True
-            self._tracer.record_elapsed(
-                "persistence", started_at, family=family, result="unavailable"
-            )
-            raise PersistenceUnavailableError("no persistence coordinator is available")
-        task = asyncio.create_task(
-            self._persistence_listener(copy.deepcopy(candidate)),
-            name="Persist Nuve runtime transaction",
-        )
-        try:
-            await asyncio.shield(task)
-        except asyncio.CancelledError as outer_cancel:
-            if task.cancelled():
-                self._latch_persistence_fault()
-                self._tracer.record_elapsed(
-                    "persistence", started_at, family=family, result="cancelled"
-                )
-                raise PersistenceUnavailableError(
-                    "canonical persistence task was cancelled"
-                ) from outer_cancel
-            # The filesystem operation can continue after cancellation. Wait for
-            # a definite result so runtime and disk cannot diverge silently.
-            try:
-                await task
-            except asyncio.CancelledError as inner_cancel:
-                self._latch_persistence_fault()
-                self._tracer.record_elapsed(
-                    "persistence", started_at, family=family, result="cancelled"
-                )
-                raise PersistenceUnavailableError(
-                    "canonical persistence task was cancelled"
-                ) from inner_cancel
-            except Exception as err:
-                self._latch_persistence_fault()
-                _LOGGER.error(
-                    "Nuve canonical persistence transaction failed (%s): %s",
-                    type(err).__name__,
-                    err,
-                )
-                self._tracer.record_elapsed(
-                    "persistence", started_at, family=family, result="failed"
-                )
-                raise PersistenceUnavailableError from err
-            self._tracer.record_elapsed(
-                "persistence", started_at, family=family, result="committed_after_cancel"
-            )
-            raise
-        except Exception as err:
-            self._latch_persistence_fault()
-            _LOGGER.error(
-                "Nuve canonical persistence transaction failed (%s): %s",
-                type(err).__name__,
-                err,
-            )
-            self._tracer.record_elapsed("persistence", started_at, family=family, result="failed")
-            raise PersistenceUnavailableError from err
-        self._tracer.record_elapsed("persistence", started_at, family=family, result="committed")
-
     async def async_persist_and_commit(
         self,
         candidate: dict[str, Any],
@@ -606,34 +562,14 @@ class NuveRuntime:
     ) -> None:
         """Persist a prepared candidate, then expose its exact runtime transition."""
 
-        if self.persistence_fault_latched:
-            raise PersistenceUnavailableError("canonical persistence requires reload")
-        cancelled = False
-        try:
-            await self._async_persist_candidate(candidate, family=family)
-        except asyncio.CancelledError:
-            cancelled = True
-        try:
-            commit()
-        except Exception as err:
-            # The candidate is durable but the in-memory transition is not. No
-            # canonical response is safe until a reload reconciles from disk.
-            self._latch_persistence_fault()
-            raise PersistenceUnavailableError("canonical commit requires reload") from err
-        if not self.persistence_fault_latched:
-            self.persistence_healthy = True
-        if cancelled:
-            raise asyncio.CancelledError
-
-    def _latch_persistence_fault(self) -> None:
-        self.persistence_healthy = False
-        self.persistence_fault_latched = True
-        self._notify_listeners()
+        if family is None and self._pending_command is not None:
+            family = self._pending_command.kind
+        await self._persistence.persist_and_commit(candidate, commit, family=family)
 
     async def async_arm_baseline_bootstrap(self, *, armed_at: datetime) -> None:
         """Durably arm the explicitly requested one-shot compatibility bridge."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             if self.has_settings_baseline:
                 return
             if not self.can_arm_bootstrap:
@@ -684,7 +620,7 @@ class NuveRuntime:
         )
 
     async def _async_expire_bootstrap(self) -> None:
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             self._bootstrap_timer.forget()
             if self._stopped or self.has_settings_baseline or self.bootstrap_armed_until is None:
                 return
@@ -858,9 +794,10 @@ class NuveRuntime:
         shadow._listeners = set()
         shadow._liveness_timer = OneShotTimer()
         shadow._bootstrap_timer = OneShotTimer()
-        shadow._persistence_listener = None
-        shadow._transaction_lock = asyncio.Lock()
         shadow._tracer = RuntimeTracer(enabled=False)
+        shadow._persistence = self._persistence.detached(
+            tracer=shadow._tracer, on_fault=shadow._notify_listeners
+        )
         dummy_future: asyncio.Future[str] | None = None
         pending = self._pending_command
         if pending is None:
@@ -929,7 +866,7 @@ class NuveRuntime:
     async def async_process_monitor_state(self, state: NuveState) -> None:
         """Persist any canonical monitor merge before exposing telemetry or success."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             pending = self._pending_command
             pending_kind = pending.kind if pending is not None else None
             self._tracer.record(
@@ -1445,7 +1382,7 @@ class NuveRuntime:
     ) -> dict[str, Any]:
         """Return a durable no-op echo or whole settings command for a device poll."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             if self.persistence_fault_latched:
                 raise PersistenceUnavailableError("canonical persistence requires reload")
             self.last_settings_poll = requested_at
@@ -1521,7 +1458,7 @@ class NuveRuntime:
     ) -> dict[str, Any]:
         """Return a durable no-op echo or whole Auto command for a device poll."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             if self.persistence_fault_latched:
                 raise PersistenceUnavailableError("canonical persistence requires reload")
             self._tracer.record("poll", family="auto", result="received", at=requested_at)
@@ -1673,7 +1610,7 @@ class NuveRuntime:
     async def async_request_settings_change(self, changes: dict[str, Any]) -> None:
         """Queue settings changes and wait for matching monitor telemetry."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             self._assert_ready("settings")
             baseline = require(self.settings_snapshot, "settings baseline")
             desired = validated_settings_changes(changes)
@@ -1688,7 +1625,7 @@ class NuveRuntime:
     async def async_request_auto_mode_change(self, changes: dict[str, Any]) -> None:
         """Queue auto-range changes and wait for matching device state."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             self._assert_ready("auto")
             baseline = require(self.auto_mode_snapshot, "Auto baseline")
             desired = validated_auto_changes(changes)
@@ -1736,7 +1673,7 @@ class NuveRuntime:
                 asyncio.shield(future), timeout=self.command_timeout_seconds
             )
         except TimeoutError:
-            async with self._transaction_lock:
+            async with self._persistence.lock:
                 if future.done():
                     result = future.result()
                 else:
@@ -1745,7 +1682,7 @@ class NuveRuntime:
                         self._notify_listeners()
                     result = "outcome_uncertain" if pending.delivered else "timeout"
         except asyncio.CancelledError:
-            async with self._transaction_lock:
+            async with self._persistence.lock:
                 if self._pending_command is pending:
                     self._pending_command = None
                     self._notify_listeners()
@@ -2399,7 +2336,7 @@ class NuveRuntime:
     async def async_shutdown(self) -> None:
         """Cancel ephemeral callbacks without erasing durable safety journals."""
 
-        async with self._transaction_lock:
+        async with self._persistence.lock:
             self._stopped = True
             if self._automatic_bootstrap_task is not None:
                 self._automatic_bootstrap_task.cancel()

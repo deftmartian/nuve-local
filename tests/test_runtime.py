@@ -621,7 +621,7 @@ def test_auto_command_is_withdrawn_if_schedule_activates_before_fetch() -> None:
 def test_settings_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
     async def scenario() -> None:
         runtime = await ready_runtime()
-        original = runtime._persistence_listener
+        original = runtime._persistence.listener
 
         async def persist_and_activate(candidate: dict[str, Any]) -> None:
             runtime.state = replace(runtime.state, schedule_type=2)
@@ -654,7 +654,7 @@ def test_settings_command_does_not_send_body_if_schedule_activates_during_persis
 def test_auto_command_does_not_send_body_if_schedule_activates_during_persist() -> None:
     async def scenario() -> None:
         runtime = await ready_runtime()
-        original = runtime._persistence_listener
+        original = runtime._persistence.listener
 
         async def persist_and_activate(candidate: dict[str, Any]) -> None:
             runtime.state = replace(runtime.state, schedule_type=1)
@@ -1588,7 +1588,7 @@ def test_recovery_firmware_baseline_requires_exact_version_match() -> None:
             "persistence_unhealthy",
         ),
         (
-            lambda runtime: setattr(runtime, "_persistence_listener", None),
+            lambda runtime: setattr(runtime._persistence, "listener", None),
             "persistence_listener_missing",
         ),
         (
@@ -1892,7 +1892,7 @@ def test_persistence_failure_logs_sanitized_root_cause(
         runtime.async_set_persistence_listener(failed_persist)
         caplog.set_level("ERROR", logger="custom_components.nuve_local.runtime")
         with pytest.raises(PersistenceUnavailableError):
-            await runtime._async_persist_candidate(runtime.persistent_baselines())
+            await runtime._persistence.persist_candidate(runtime.persistent_baselines())
 
         assert "RuntimeError" in caplog.text
         assert "verified readback failed" in caplog.text
@@ -2034,8 +2034,8 @@ def test_control_ready_matches_control_block_reason_in_every_block_state() -> No
             "ready": lambda r: None,
             "control_disabled": lambda r: setattr(r, "control_enabled", False),
             "not_paired": lambda r: setattr(r, "paired", False),
-            "persistence_fault": lambda r: r._latch_persistence_fault(),
-            "persistence_listener_missing": lambda r: setattr(r, "_persistence_listener", None),
+            "persistence_fault": lambda r: r._persistence.latch_fault(),
+            "persistence_listener_missing": lambda r: setattr(r._persistence, "listener", None),
             "auto_baseline_missing": lambda r: setattr(r, "auto_mode_snapshot", None),
             "monitor_authority_missing": lambda r: setattr(
                 r, "authoritative_control_monitor_seen", False
