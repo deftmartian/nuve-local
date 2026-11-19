@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-import custom_components.nuve_local.runtime as runtime_module
+import custom_components.nuve_local.runtime.rules as runtime_rules
 from custom_components.nuve_local.commands import validated_auto_changes, validated_settings_changes
 from custom_components.nuve_local.errors import (
     CommandOutcomeUncertainError,
@@ -115,7 +115,7 @@ def test_monitor_updates_merge_without_erasing_prior_fields() -> None:
 
 def test_settings_command_retries_identically_and_waits_for_telemetry(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         original_target = runtime.state.target_temperature
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
@@ -168,7 +168,7 @@ def test_consecutive_settings_commands_keep_full_authority_after_coherent_echo(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         prior_upload = runtime.last_settings_upload
 
@@ -218,7 +218,7 @@ def test_consecutive_auto_commands_keep_full_authority_after_coherent_echo(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         prior_upload = runtime.last_auto_mode_upload
 
@@ -286,7 +286,7 @@ def test_same_second_monitor_confirms_after_coherent_post_delivery_echo(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -332,7 +332,7 @@ def test_same_second_monitor_without_post_delivery_echo_remains_unconfirmed(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime(timeout=0.01)
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -382,7 +382,7 @@ def test_post_delivery_settings_echo_with_unrelated_drift_revokes_authority(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -757,7 +757,7 @@ def test_post_queue_local_settings_change_is_rebased_instead_of_overwritten(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0.002)
@@ -787,7 +787,7 @@ def test_post_queue_local_settings_change_is_rebased_instead_of_overwritten(
 
 def test_post_queue_matching_monitor_completes_without_delivery(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0.002)
@@ -815,7 +815,7 @@ def test_post_queue_matching_monitor_completes_without_delivery(monkeypatch: Any
 
 def test_post_queue_matching_auto_monitor_completes_without_delivery(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
@@ -850,7 +850,7 @@ def test_nonzero_queue_skew_barrier_rejects_early_monitor_evidence(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 2)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 2)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -893,7 +893,7 @@ def test_response_sender_disconnect_retains_write_ahead_uncertainty(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime(timeout=0.05)
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -922,7 +922,7 @@ def test_post_queue_local_auto_change_is_rebased_instead_of_overwritten(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
@@ -959,7 +959,7 @@ def test_settings_confirmation_preserves_newer_device_state_and_delivery_payload
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         command = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -1013,7 +1013,7 @@ def test_auto_confirmation_preserves_newer_bound_and_immutable_delivery(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         command = asyncio.create_task(
@@ -1637,7 +1637,7 @@ def test_buffered_monitor_data_cannot_confirm_or_clear_a_delivered_command(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime(timeout=0.03)
         task = asyncio.create_task(runtime.async_request_settings_change({"temp": 22.0}))
         await asyncio.sleep(0)
@@ -1716,7 +1716,7 @@ def test_first_strictly_post_delivery_monitor_can_confirm_command() -> None:
         pending = runtime._queue_command_locked(
             "settings",
             {"temp": 20.0},
-            runtime._command_payload(runtime.settings_snapshot, {"temp": 20.0}),
+            runtime_rules.command_payload(runtime.settings_snapshot, {"temp": 20.0}),
         )
         pending.delivered = True
         pending.delivered_at = delivered_at
@@ -1904,7 +1904,7 @@ def test_persistence_failure_logs_sanitized_root_cause(
 
 def test_auto_command_requires_telemetry_only_for_fields_that_changed(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         await runtime.async_get_auto_mode_response(requested_at=datetime.now(UTC))
         await runtime.async_request_auto_mode_change(
@@ -2144,7 +2144,7 @@ def test_automatic_baseline_capture_arms_once_when_all_gates_become_ready() -> N
 
 def test_pre_delivery_monitor_cannot_confirm_streamed_command(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime(timeout=0.5)
         persisted = attach_memory_persistence(runtime)
         sender_started = asyncio.Event()

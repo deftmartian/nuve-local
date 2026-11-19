@@ -7,7 +7,7 @@ import copy
 import logging
 import math
 from collections import deque
-from collections.abc import Awaitable, Callable, Coroutine, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
@@ -24,12 +24,8 @@ from ..const import (
     BOOTSTRAP_WINDOW_SECONDS,
     COMMAND_TIMEOUT_SECONDS,
     LIVENESS_TIMEOUT_SECONDS,
-    MAX_DEVICE_TEMPERATURE,
     MAX_OUTDOOR_TEMPERATURE,
-    MIN_DEVICE_TEMPERATURE,
     MIN_OUTDOOR_TEMPERATURE,
-    MONITOR_FUTURE_SKEW_SECONDS,
-    MONITOR_MAX_AGE_SECONDS,
     OUTDOOR_MAX_AGE_SECONDS,
     TEMP_CORRECTION_VERSIONS_BY_FIRMWARE,
 )
@@ -44,7 +40,7 @@ from ..errors import (
     RuntimeStoppedError,
     require,
 )
-from ..models import NuveMode, NuveState, NuveSystemType
+from ..models import NuveMode, NuveState
 from ..protocol import (
     next_revision,
     parse_auto_mode_baseline,
@@ -62,48 +58,34 @@ from ..trace import (
     sanitized_trace,
     trace_event,
 )
+from .records import PendingCommand, ResponseSender, UncertainCommand, serialize_uncertainty
+from .rules import (
+    ACTIVE_SCHEDULE_TYPES,
+    NO_SCHEDULE_TYPE,
+    SYSTEM_TYPE_NAMES,
+    changed_fields,
+    command_payload,
+    current_monitor_sample_time,
+    latest_revision,
+    monitor_gap_expired,
+    monitor_is_fresh,
+    monitor_sample_is_post_queue,
+    valid_auto_pair,
+    valid_humidity,
+    values_match,
+)
 
-ACTIVE_SCHEDULE_TYPES = frozenset({0, 1, 2, 3, 8})
-NO_SCHEDULE_TYPE = 9
+__all__ = [
+    "ACTIVE_SCHEDULE_TYPES",
+    "NO_SCHEDULE_TYPE",
+    "SYSTEM_TYPE_NAMES",
+    "NuveRuntime",
+    "PendingCommand",
+    "ResponseSender",
+    "UncertainCommand",
+]
 
-
-SYSTEM_TYPE_NAMES = {
-    NuveSystemType.TRADITIONAL: "traditional",
-    NuveSystemType.HEAT_PUMP: "heat_pump",
-    NuveSystemType.COOLING_ONLY: "cooling",
-    NuveSystemType.HEATING_ONLY: "heating",
-    NuveSystemType.DUAL_FUEL_HEATING: "dual_fuel_heating",
-}
-ResponseSender = Callable[[dict[str, Any]], Awaitable[None]]
 _LOGGER = logging.getLogger(__name__)
-
-
-@dataclass(slots=True)
-class PendingCommand:
-    """One single-flight server-to-device synchronization change."""
-
-    kind: Literal["settings", "auto"]
-    desired: dict[str, Any]
-    payload: dict[str, Any]
-    future: asyncio.Future[str]
-    queued_at: datetime
-    queued_baseline: dict[str, Any]
-    revision: str | None = None
-    delivered: bool = False
-    delivered_at: datetime | None = None
-    coherent_echo_received_at: datetime | None = None
-
-
-@dataclass(slots=True)
-class UncertainCommand:
-    """A delivered command whose result still needs authoritative evidence."""
-
-    kind: Literal["settings", "auto"]
-    desired: dict[str, Any]
-    # None is the durable write-ahead state: a response may be in flight, but
-    # no server-clock boundary has yet been established after its body was sent.
-    delivered_at: datetime | None
-    revision: str | None = None
 
 
 @dataclass(slots=True)
@@ -432,18 +414,8 @@ class NuveRuntime:
     def monitor_is_fresh(self) -> bool:
         """Return whether telemetry was received recently enough to expose as live."""
 
-        if (
-            self.last_monitor_upload is None
-            or self.state.sample_time is None
-            or self.state.records_received < 1
-        ):
-            return False
-        now = datetime.now(UTC)
-        upload_age = (now - self.last_monitor_upload).total_seconds()
-        sample_age = (now - self.state.sample_time).total_seconds()
-        return (
-            0 <= upload_age <= MONITOR_MAX_AGE_SECONDS
-            and -MONITOR_FUTURE_SKEW_SECONDS <= sample_age <= MONITOR_MAX_AGE_SECONDS
+        return monitor_is_fresh(
+            self.last_monitor_upload, self.state.sample_time, self.state.records_received
         )
 
     @property
@@ -634,9 +606,9 @@ class NuveRuntime:
                 return
             if not self.can_arm_bootstrap:
                 raise ControlNotReadyError
-            prior = self._latest_revision(
-                self._latest_revision(self.settings_revision, self.settings_revision_floor),
-                self._latest_revision(self.auto_mode_revision, self.auto_revision_floor),
+            prior = latest_revision(
+                latest_revision(self.settings_revision, self.settings_revision_floor),
+                latest_revision(self.auto_mode_revision, self.auto_revision_floor),
             )
             revision = next_revision(prior, now=armed_at)
             expires_at = armed_at + timedelta(seconds=BOOTSTRAP_WINDOW_SECONDS)
@@ -738,33 +710,6 @@ class NuveRuntime:
         self.state = state
         self._notify_listeners()
 
-    def _note_monitor_upload(self, received_at: datetime) -> None:
-        """Advance monitor liveness and expire authority after a telemetry gap."""
-
-        previous_monitor_upload = self.last_monitor_upload
-        self.last_monitor_upload = received_at
-        if (
-            previous_monitor_upload is not None
-            and received_at - previous_monitor_upload > timedelta(seconds=MONITOR_MAX_AGE_SECONDS)
-        ):
-            self.authoritative_control_monitor_seen = False
-
-    def _current_monitor_sample_time(
-        self, state: NuveState, received_at: datetime
-    ) -> datetime | None:
-        """Return the sample time, or None for missing, buffered, future, or stale samples."""
-
-        sample_time = state.sample_time
-        if (
-            sample_time is None
-            or sample_time.tzinfo is None
-            or sample_time > received_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
-            or sample_time < received_at - timedelta(seconds=MONITOR_MAX_AGE_SECONDS)
-            or (self.state.sample_time is not None and sample_time <= self.state.sample_time)
-        ):
-            return None
-        return sample_time
-
     def _monitor_fields(
         self, state: NuveState, *, sample_time: datetime
     ) -> tuple[dict[str, Any], bool]:
@@ -815,11 +760,19 @@ class NuveRuntime:
         self.authoritative_control_monitor_seen = bool(
             state.available
             and state.target_temperature is not None
-            and self._valid_humidity(state.target_humidity)
+            and valid_humidity(state.target_humidity)
             and state.mode is not None
-            and self._valid_auto_pair(state.auto_temperature_low, state.auto_temperature_high)
+            and valid_auto_pair(state.auto_temperature_low, state.auto_temperature_high)
             and state.system_type in SYSTEM_TYPE_NAMES
         )
+
+    def _note_monitor_upload(self, received_at: datetime) -> None:
+        """Advance monitor liveness and expire authority after a telemetry gap."""
+
+        previous_monitor_upload = self.last_monitor_upload
+        self.last_monitor_upload = received_at
+        if monitor_gap_expired(previous_monitor_upload, received_at):
+            self.authoritative_control_monitor_seen = False
 
     def _merge_monitor_state_in_place(self, state: NuveState) -> bool:
         """Merge one monitor payload into this runtime or an isolated shadow."""
@@ -827,7 +780,9 @@ class NuveRuntime:
         current = self.state
         received_at = state.last_seen or datetime.now(UTC)
         self._note_monitor_upload(received_at)
-        sample_time = self._current_monitor_sample_time(state, received_at)
+        sample_time = current_monitor_sample_time(
+            state.sample_time, received_at, self.state.sample_time
+        )
         if sample_time is None:
             # Authentication/liveness is independent from telemetry authority.
             self.async_update_state(
@@ -1015,7 +970,7 @@ class NuveRuntime:
 
         self.settings_snapshot = incoming
         self.settings_revision = revision
-        self.settings_revision_floor = self._latest_revision(self.settings_revision_floor, revision)
+        self.settings_revision_floor = latest_revision(self.settings_revision_floor, revision)
         self._clear_bootstrap()
         if self.live_data_command_time is None:
             self.live_data_command_time = revision
@@ -1088,7 +1043,7 @@ class NuveRuntime:
 
         self.auto_mode_snapshot = incoming
         self.auto_mode_revision = revision
-        self.auto_revision_floor = self._latest_revision(self.auto_revision_floor, revision)
+        self.auto_revision_floor = latest_revision(self.auto_revision_floor, revision)
         if not canonical_echo:
             self.last_auto_mode_upload = received_at
             self.authoritative_control_monitor_seen = False
@@ -1122,7 +1077,7 @@ class NuveRuntime:
         candidate.pop("bootstrap", None)
         candidate["settings"] = incoming
         candidate["settings_revision"] = revision
-        candidate["settings_revision_floor"] = self._latest_revision(
+        candidate["settings_revision_floor"] = latest_revision(
             self.settings_revision_floor, revision
         )
         if self._settings_owned_upload_result(incoming, received_at) is not None:
@@ -1141,13 +1096,13 @@ class NuveRuntime:
         candidate = self.persistent_baselines()
         candidate["auto_mode"] = incoming
         candidate["auto_mode_revision"] = revision
-        candidate["auto_revision_floor"] = self._latest_revision(self.auto_revision_floor, revision)
+        candidate["auto_revision_floor"] = latest_revision(self.auto_revision_floor, revision)
         return revision, candidate
 
     def _settings_snapshot_revision(self, incoming: dict[str, Any], received_at: datetime) -> str:
-        prior = self._latest_revision(
-            self._latest_revision(
-                self._latest_revision(self.settings_revision, self.settings_revision_floor),
+        prior = latest_revision(
+            latest_revision(
+                latest_revision(self.settings_revision, self.settings_revision_floor),
                 self.bootstrap_revision,
             ),
             self._pending_command.revision if self._pending_command is not None else None,
@@ -1158,10 +1113,10 @@ class NuveRuntime:
         # The one-shot Auto bootstrap shares the settings bootstrap timestamp.
         # The first canonical Auto response must therefore also advance beyond
         # the accepted settings revision, even when both uploads occur in one second.
-        prior = self._latest_revision(
-            self._latest_revision(self.settings_revision, self.settings_revision_floor),
-            self._latest_revision(
-                self._latest_revision(self.auto_mode_revision, self.auto_revision_floor),
+        prior = latest_revision(
+            latest_revision(self.settings_revision, self.settings_revision_floor),
+            latest_revision(
+                latest_revision(self.auto_mode_revision, self.auto_revision_floor),
                 self._pending_command.revision if self._pending_command is not None else None,
             ),
         )
@@ -1175,10 +1130,10 @@ class NuveRuntime:
         revision = prepared_revision
         self.settings_snapshot = copy.deepcopy(prepared_snapshot)
         self.settings_revision = revision
-        self.settings_revision_floor = self._latest_revision(self.settings_revision_floor, revision)
+        self.settings_revision_floor = latest_revision(self.settings_revision_floor, revision)
         pending = self._pending_command
         if pending is not None and pending.kind == "settings" and not pending.delivered:
-            pending.payload = self._command_payload(self.settings_snapshot, pending.desired)
+            pending.payload = command_payload(self.settings_snapshot, pending.desired)
         self.async_update_state(replace(self.state, settings_revision=revision))
         return revision
 
@@ -1203,7 +1158,7 @@ class NuveRuntime:
             value = merged
         full[section] = value
         revision = next_revision(
-            self._latest_revision(self.settings_revision, self.settings_revision_floor),
+            latest_revision(self.settings_revision, self.settings_revision_floor),
             now=received_at,
         )
         candidate = self.persistent_baselines()
@@ -1337,7 +1292,7 @@ class NuveRuntime:
                 "auto_served": self.bootstrap_auto_served,
             }
         if self.uncertain_command is not None:
-            data["uncertain_command"] = self._serialize_uncertainty(self.uncertain_command)
+            data["uncertain_command"] = serialize_uncertainty(self.uncertain_command)
         return data
 
     def _canonical_settings_response(self) -> dict[str, Any]:
@@ -1411,10 +1366,10 @@ class NuveRuntime:
             )
             next_phase: Literal["reset", "wake"] = "wake"
         else:
-            prior = self._latest_revision(
-                self._latest_revision(settings_revision, self.settings_revision_floor),
-                self._latest_revision(
-                    self._latest_revision(
+            prior = latest_revision(
+                latest_revision(settings_revision, self.settings_revision_floor),
+                latest_revision(
+                    latest_revision(
                         self.live_data_command_time,
                         (
                             self.uncertain_command.revision
@@ -1602,8 +1557,8 @@ class NuveRuntime:
             current, floor_key = self.settings_revision, "settings_revision_floor"
         else:
             current, floor_key = self.auto_mode_revision, "auto_revision_floor"
-        prior = self._latest_revision(
-            self._latest_revision(current, getattr(self, floor_key)), pending.revision
+        prior = latest_revision(
+            latest_revision(current, getattr(self, floor_key)), pending.revision
         )
         revision = next_revision(prior, now=requested_at)
         uncertainty = UncertainCommand(
@@ -1614,7 +1569,7 @@ class NuveRuntime:
         )
         candidate = self.persistent_baselines()
         candidate[floor_key] = revision
-        candidate["uncertain_command"] = self._serialize_uncertainty(uncertainty)
+        candidate["uncertain_command"] = serialize_uncertainty(uncertainty)
 
         def commit_delivery() -> None:
             pending.revision = revision
@@ -1669,7 +1624,7 @@ class NuveRuntime:
                 revision=pending.revision,
             )
             candidate = self.persistent_baselines()
-            candidate["uncertain_command"] = self._serialize_uncertainty(uncertainty)
+            candidate["uncertain_command"] = serialize_uncertainty(uncertainty)
 
             def commit_delivery_boundary() -> None:
                 pending.delivered_at = delivered_at
@@ -1693,10 +1648,10 @@ class NuveRuntime:
             baseline = require(self.settings_snapshot, "settings baseline")
             desired = validated_settings_changes(changes)
             desired = expand_settings_changes(baseline, desired)
-            desired = self._changed_fields(desired, baseline)
+            desired = changed_fields(desired, baseline)
             if not desired:
                 return
-            payload = self._command_payload(baseline, desired)
+            payload = command_payload(baseline, desired)
             pending = self._queue_command_locked("settings", desired, payload)
         await self._wait_for_command(pending)
 
@@ -1707,10 +1662,10 @@ class NuveRuntime:
             self._assert_ready("auto")
             baseline = require(self.auto_mode_snapshot, "Auto baseline")
             desired = validated_auto_changes(changes)
-            desired = self._changed_fields(desired, baseline)
+            desired = changed_fields(desired, baseline)
             if not desired:
                 return
-            payload = self._command_payload(baseline, desired)
+            payload = command_payload(baseline, desired)
             if float(payload["auto_temp_low"]) >= float(payload["auto_temp_high"]):
                 raise ControlNotReadyError
             pending = self._queue_command_locked("auto", desired, payload)
@@ -1792,29 +1747,6 @@ class NuveRuntime:
         if kind == "auto" and not self.has_auto_mode_baseline:
             raise ControlNotReadyError
 
-    @staticmethod
-    def _matches(desired: dict[str, Any], actual: dict[str, Any]) -> bool:
-        for key, value in desired.items():
-            candidate = actual.get(key)
-            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                if (
-                    not isinstance(candidate, (int, float))
-                    or isinstance(candidate, bool)
-                    or not math.isclose(float(candidate), float(value), abs_tol=0.02)
-                ):
-                    return False
-            elif candidate != value:
-                return False
-        return True
-
-    @classmethod
-    def _changed_fields(cls, desired: dict[str, Any], baseline: dict[str, Any]) -> dict[str, Any]:
-        return {
-            key: copy.deepcopy(value)
-            for key, value in desired.items()
-            if not cls._matches({key: value}, baseline)
-        }
-
     def _settings_owned_upload_result(
         self, incoming: dict[str, Any], received_at: datetime
     ) -> str | None:
@@ -1840,7 +1772,7 @@ class NuveRuntime:
             delivered_at = self.uncertain_command.delivered_at
         if delivered_at is None or desired is None or received_at <= delivered_at:
             return None
-        return "confirmed" if self._matches(desired, incoming) else "state_changed"
+        return "confirmed" if values_match(desired, incoming) else "state_changed"
 
     @staticmethod
     def _settings_upload_owns(desired: dict[str, Any]) -> bool:
@@ -1863,7 +1795,7 @@ class NuveRuntime:
             or not pending.delivered
             or pending.delivered_at is None
             or received_at <= pending.delivered_at
-            or not self._matches(pending.desired, incoming)
+            or not values_match(pending.desired, incoming)
         ):
             return frozenset()
         return frozenset(pending.desired)
@@ -1882,20 +1814,6 @@ class NuveRuntime:
         for key in permitted_changes:
             expected[key] = copy.deepcopy(incoming[key])
         return incoming == expected
-
-    @staticmethod
-    def _latest_revision(first: str | None, second: str | None) -> str | None:
-        if first is None:
-            return second
-        if second is None:
-            return first
-        return max(first, second)
-
-    @staticmethod
-    def _command_payload(baseline: dict[str, Any], changes: dict[str, Any]) -> dict[str, Any]:
-        payload = copy.deepcopy(baseline)
-        payload.update(copy.deepcopy(changes))
-        return payload
 
     def _settings_snapshot_is_canonical_echo(
         self,
@@ -2002,7 +1920,7 @@ class NuveRuntime:
             SYSTEM_TYPE_NAMES.get(state_system_type) if state_system_type is not None else None
         )
         return (
-            self._matches(
+            values_match(
                 {
                     "temp": self.state.target_temperature,
                     "humidity": self.state.target_humidity,
@@ -2015,7 +1933,7 @@ class NuveRuntime:
                 },
             )
             and actual_system_type == expected_system_type
-            and self._matches(
+            and values_match(
                 {
                     "auto_temp_low": self.state.auto_temperature_low,
                     "auto_temp_high": self.state.auto_temperature_high,
@@ -2069,7 +1987,7 @@ class NuveRuntime:
                 evidence_is_post_queue=evidence_is_post_queue,
             )
         }
-        if self._valid_humidity(state.target_humidity):
+        if valid_humidity(state.target_humidity):
             updates["humidity"] = state.target_humidity
 
         changed = False
@@ -2084,7 +2002,7 @@ class NuveRuntime:
             return False
 
         self.settings_revision = next_revision(
-            self._latest_revision(self.settings_revision, self.settings_revision_floor),
+            latest_revision(self.settings_revision, self.settings_revision_floor),
             now=seen_at,
         )
         self.settings_revision_floor = self.settings_revision
@@ -2106,7 +2024,7 @@ class NuveRuntime:
             state.monitor_is_sync
             and state.auto_temperature_low is not None
             and state.auto_temperature_high is not None
-            and self._valid_auto_pair(state.auto_temperature_low, state.auto_temperature_high)
+            and valid_auto_pair(state.auto_temperature_low, state.auto_temperature_high)
         ):
             self.auto_mode_snapshot = {
                 "auto_temp_low": state.auto_temperature_low,
@@ -2134,7 +2052,7 @@ class NuveRuntime:
             }
             prospective = copy.deepcopy(snapshot)
             prospective.update(updates)
-            if not self._valid_auto_pair(
+            if not valid_auto_pair(
                 prospective.get("auto_temp_low"), prospective.get("auto_temp_high")
             ):
                 return False
@@ -2150,9 +2068,9 @@ class NuveRuntime:
             return False
 
         self.auto_mode_revision = next_revision(
-            self._latest_revision(
-                self._latest_revision(self.settings_revision, self.settings_revision_floor),
-                self._latest_revision(self.auto_mode_revision, self.auto_revision_floor),
+            latest_revision(
+                latest_revision(self.settings_revision, self.settings_revision_floor),
+                latest_revision(self.auto_mode_revision, self.auto_revision_floor),
             ),
             now=seen_at,
         )
@@ -2167,7 +2085,7 @@ class NuveRuntime:
         evidence_is_post_queue = bool(
             pending is not None
             and not pending.delivered
-            and sample_time > pending.queued_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
+            and monitor_sample_is_post_queue(sample_time, pending.queued_at)
         )
         changed = self._merge_monitor_settings_baseline(
             state,
@@ -2198,8 +2116,7 @@ class NuveRuntime:
             pending is None
             or pending.delivered
             or state.sample_time is None
-            or state.sample_time
-            <= pending.queued_at + timedelta(seconds=MONITOR_FUTURE_SKEW_SECONDS)
+            or not monitor_sample_is_post_queue(state.sample_time, pending.queued_at)
         ):
             return False
 
@@ -2217,11 +2134,11 @@ class NuveRuntime:
 
         if not actual:
             return False
-        if set(actual) == set(pending.desired) and self._matches(pending.desired, actual):
+        if set(actual) == set(pending.desired) and values_match(pending.desired, actual):
             self._complete_pending("confirmed")
             return True
         if any(
-            not self._matches({key: pending.queued_baseline[key]}, {key: value})
+            not values_match({key: pending.queued_baseline[key]}, {key: value})
             for key, value in actual.items()
         ):
             self._complete_pending("state_changed")
@@ -2260,19 +2177,6 @@ class NuveRuntime:
             return True
         return False
 
-    @staticmethod
-    def _serialize_uncertainty(uncertain: UncertainCommand) -> dict[str, Any]:
-        return {
-            "kind": uncertain.kind,
-            "desired": copy.deepcopy(uncertain.desired),
-            "delivered_at": (
-                uncertain.delivered_at.astimezone(UTC).isoformat()
-                if uncertain.delivered_at is not None
-                else None
-            ),
-            "revision": uncertain.revision,
-        }
-
     def _confirm_from_monitor(self, state: NuveState) -> bool:
         pending = self._pending_command
         if (
@@ -2294,12 +2198,12 @@ class NuveRuntime:
                 actual["temp"] = state.target_temperature
             if state.mode is not None:
                 actual["mode_id"] = int(state.mode)
-            if not self._matches(pending.desired, actual):
+            if not values_match(pending.desired, actual):
                 return False
             confirmed_revision = next_revision(
-                self._latest_revision(
+                latest_revision(
                     self.settings_revision_floor,
-                    self._latest_revision(self.settings_revision, pending.revision),
+                    latest_revision(self.settings_revision, pending.revision),
                 ),
                 now=state.sample_time,
             )
@@ -2316,12 +2220,12 @@ class NuveRuntime:
                 actual["auto_temp_low"] = state.auto_temperature_low
             if state.auto_temperature_high is not None:
                 actual["auto_temp_high"] = state.auto_temperature_high
-            if not self._matches(pending.desired, actual):
+            if not values_match(pending.desired, actual):
                 return False
             confirmed_revision = next_revision(
-                self._latest_revision(
+                latest_revision(
                     self.auto_revision_floor,
-                    self._latest_revision(self.auto_mode_revision, pending.revision),
+                    latest_revision(self.auto_mode_revision, pending.revision),
                 ),
                 now=state.sample_time,
             )
@@ -2450,26 +2354,6 @@ class NuveRuntime:
             return self.contractor_url
         return self.bootstrap_technician_url
 
-    @staticmethod
-    def _valid_auto_pair(low: Any, high: Any) -> bool:
-        values = (low, high)
-        return all(
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(float(value))
-            and MIN_DEVICE_TEMPERATURE <= float(value) <= MAX_DEVICE_TEMPERATURE
-            for value in values
-        ) and float(low) < float(high)
-
-    @staticmethod
-    def _valid_humidity(value: Any) -> bool:
-        return (
-            isinstance(value, (int, float))
-            and not isinstance(value, bool)
-            and math.isfinite(float(value))
-            and 0 <= float(value) <= 100
-        )
-
     def async_note_authenticated_contact(self, seen_at: datetime) -> None:
         """Record an authenticated request and reset the liveness timer."""
 
@@ -2514,7 +2398,7 @@ class NuveRuntime:
             self.outdoor_source = "unavailable"
             self._notify_listeners()
             return
-        if humidity_percent is not None and not self._valid_humidity(humidity_percent):
+        if humidity_percent is not None and not valid_humidity(humidity_percent):
             humidity_percent = None
         if (
             not isinstance(weather, dict)
