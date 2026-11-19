@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 from aiohttp.test_utils import TestClient, TestServer
 
-import custom_components.nuve_local.runtime as runtime_module
+import custom_components.nuve_local.runtime.rules as runtime_rules
 from custom_components.nuve_local.auth import token_sha256
 from custom_components.nuve_local.commissioning import new_pairing_deadline
 from custom_components.nuve_local.const import (
@@ -32,7 +32,7 @@ from custom_components.nuve_local.const import (
     UNKNOWN_ENDPOINT_OVERFLOW_PATH,
 )
 from custom_components.nuve_local.contractor import contractor_logo_signature
-from custom_components.nuve_local.errors import ControlNotReadyError
+from custom_components.nuve_local.errors import CommandOutcomeUncertainError, ControlNotReadyError
 from custom_components.nuve_local.models import NuveMode, NuveState, NuveSystemType
 from custom_components.nuve_local.runtime import NuveRuntime
 from custom_components.nuve_local.server import NuveApiServer
@@ -768,7 +768,7 @@ def test_current_sensor_ack_uses_firmware_reply_types() -> None:
 
 def test_real_http_command_delivery_journals_then_confirms(monkeypatch: Any) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         store = FakeBaselineStore()
         server, runtime, entry = _server(baseline_store=store)
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
@@ -1183,7 +1183,7 @@ def test_real_http_final_boundary_failure_returns_sent_body_and_latches_control(
     monkeypatch: Any,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         store = FinalBoundaryFailingStore()
         server, runtime, entry = _server(baseline_store=store)
         entry.data[CONF_TOKEN_SHA256] = token_sha256(TOKEN)
@@ -1240,7 +1240,7 @@ def test_real_http_final_boundary_failure_returns_sent_body_and_latches_control(
             assert runtime.uncertain_command is not None
             assert runtime.uncertain_command.delivered_at is None
             assert store.saved[-1]["uncertain_command"]["delivered_at"] is None
-            with pytest.raises(runtime_module.CommandOutcomeUncertainError):
+            with pytest.raises(CommandOutcomeUncertainError):
                 await command
         await runtime.async_shutdown()
 

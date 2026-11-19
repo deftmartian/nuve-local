@@ -11,7 +11,7 @@ from homeassistant.components.climate import ATTR_TEMPERATURE
 from homeassistant.components.climate.const import HVACAction, HVACMode
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
-import custom_components.nuve_local.runtime as runtime_module
+import custom_components.nuve_local.runtime.rules as runtime_rules
 from custom_components.nuve_local.climate import NuveClimate
 from custom_components.nuve_local.models import NuveMode, NuveState
 from custom_components.nuve_local.runtime import NuveRuntime
@@ -115,7 +115,7 @@ def test_climate_projects_requested_temperature_until_confirmation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def scenario() -> None:
-        monkeypatch.setattr(runtime_module, "MONITOR_FUTURE_SKEW_SECONDS", 0)
+        monkeypatch.setattr(runtime_rules, "MONITOR_FUTURE_SKEW_SECONDS", 0)
         runtime = await ready_runtime()
         entity = NuveClimate(runtime)
         original = entity.native_target_temperature

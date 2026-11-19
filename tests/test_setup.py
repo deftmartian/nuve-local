@@ -137,7 +137,7 @@ def test_listener_start_failure_cleans_restored_bootstrap_timer(monkeypatch: Any
             await async_setup_entry(FakeHass(), entry)  # type: ignore[arg-type]
         assert stopped is True
         assert entry.runtime_data.runtime._stopped is True
-        assert entry.runtime_data.runtime._bootstrap_timer is None
+        assert entry.runtime_data.runtime._bootstrap_timer.scheduled is False
 
     asyncio.run(scenario())
 

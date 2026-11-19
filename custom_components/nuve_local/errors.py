@@ -1,4 +1,4 @@
-"""Safe control failures shared by the runtime, validators and entities."""
+"""Safe control failures and the internal invariant error shared by the integration."""
 
 from __future__ import annotations
 
@@ -37,3 +37,20 @@ class RuntimeStoppedError(NuveControlError):
 
 class PersistenceUnavailableError(NuveControlError):
     """Canonical state cannot be trusted after a persistence failure."""
+
+
+class RuntimeInvariantError(AssertionError):
+    """An internal runtime invariant was violated.
+
+    This is never a safe control failure. It subclasses ``AssertionError`` so
+    the former ``assert`` guards keep their exact outcome, but the check no
+    longer disappears when Python runs with ``-O``.
+    """
+
+
+def require[T](value: T | None, description: str) -> T:
+    """Return ``value``, or raise when an invariant guaranteed it is present."""
+
+    if value is None:
+        raise RuntimeInvariantError(f"{description} is unexpectedly missing")
+    return value
