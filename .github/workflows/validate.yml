@@ -1,0 +1,32 @@
+name: Validate
+
+# Runs on the GitHub mirror only (Forgejo reads .forgejo/workflows and ignores
+# this directory). HACS validation checks the public GitHub repository itself:
+# description, topics, issues, releases, and hacs.json. hassfest also runs in
+# Forgejo CI; it runs here too so the published repository is checked as published.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      # hacs/action publishes no current release tags; pin the reviewed main commit.
+      - uses: hacs/action@1ebf01c408f29afcb6406bd431bc98fd8cbb15aa
+        with:
+          category: integration
+
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # Pinned to a reviewed commit of the actions repository's master branch.
+      - uses: home-assistant/actions/hassfest@86d4564712fa02543c808e3a693dd04f9d3f8361

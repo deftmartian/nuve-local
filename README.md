@@ -160,6 +160,9 @@ environment. Run the complete check with:
 ./scripts/check
 ```
 
+CI also runs `scripts/check_ha_compat.sh` (the test suite on the minimum supported
+Home Assistant), `scripts/hassfest`, and a Gitleaks secret scan.
+
 Build the release archive with:
 
 ```bash

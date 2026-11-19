@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# Validate the integration with Home Assistant's hassfest, without Docker.
+#
+# Fetches only script/ and packages/hassfest from Home Assistant Core at the
+# version pinned in pyproject.toml, then runs it with the project environment.
+# Override the Core version with: scripts/hassfest 2026.11.1
+set -euo pipefail
+
+repo_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cd "$repo_dir"
+
+version=${1:-$(uv run --frozen python - <<'EOF'
+import tomllib
+
+with open("pyproject.toml", "rb") as f:
+    dev = tomllib.load(f)["dependency-groups"]["dev"]
+print(next(d.split("==", 1)[1] for d in dev if d.startswith("homeassistant==")))
+EOF
+)}
+
+work=$(mktemp -d "${TMPDIR:-/tmp}/nuve-hassfest-XXXXXX")
+trap 'rm -rf -- "$work"' EXIT
+
+echo "hassfest from Home Assistant Core ${version}"
+git clone --quiet --depth 1 --branch "$version" --filter=blob:none --sparse \
+  https://github.com/home-assistant/core.git "$work/core" 2>/dev/null
+git -C "$work/core" sparse-checkout set script packages/hassfest
+
+# Use the tool versions Core itself pins for hassfest.
+pin() { awk -F'==' -v n="$1" '$1 == n {print $0}' "$work/core"/requirements_test*.txt; }
+tools=()
+for name in probatio tqdm pipdeptree; do
+  spec=$(pin "$name")
+  tools+=(--with "${spec:-$name}")
+done
+
+cd "$work/core"
+PYTHONPATH="$work/core:$work/core/packages/hassfest" \
+  uv run --project "$repo_dir" --frozen "${tools[@]}" \
+  python -m script.hassfest --action validate \
+  --integration-path "$repo_dir/custom_components/nuve_local"
