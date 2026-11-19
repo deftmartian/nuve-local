@@ -12,6 +12,19 @@ from ..const import MAX_OUTDOOR_TEMPERATURE, MIN_OUTDOOR_TEMPERATURE, OUTDOOR_MA
 from .rules import valid_humidity
 
 
+def observation_is_fresh(observed_at: datetime | None, *, now: datetime | None = None) -> bool:
+    """Return whether an outdoor observation is recent enough to serve.
+
+    The single freshness rule shared by source selection and the served value: an
+    observation is fresh for OUTDOOR_MAX_AGE_SECONDS, and a future timestamp is not.
+    """
+
+    if observed_at is None:
+        return False
+    age = ((now or datetime.now(UTC)) - observed_at).total_seconds()
+    return 0 <= age <= OUTDOOR_MAX_AGE_SECONDS
+
+
 @dataclass(slots=True)
 class OutdoorConditions:
     """The latest validated outdoor observation, or an explicit unavailable state."""
@@ -27,10 +40,7 @@ class OutdoorConditions:
     def is_fresh(self) -> bool:
         """Return whether the projected outdoor temperature is safe to serve."""
 
-        if self.temperature_c is None or self.observed_at is None:
-            return False
-        age = (datetime.now(UTC) - self.observed_at).total_seconds()
-        return 0 <= age <= OUTDOOR_MAX_AGE_SECONDS
+        return self.temperature_c is not None and observation_is_fresh(self.observed_at)
 
     def update(
         self,

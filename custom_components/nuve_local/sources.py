@@ -18,6 +18,7 @@ from homeassistant.helpers.event import (
     async_track_state_report_event,
     async_track_time_interval,
 )
+from homeassistant.util import dt as dt_util
 from homeassistant.util.unit_conversion import TemperatureConverter
 
 from .const import (
@@ -25,7 +26,9 @@ from .const import (
     FORECAST_REQUEST_TIMEOUT_SECONDS,
     MAX_OUTDOOR_TEMPERATURE,
     MIN_OUTDOOR_TEMPERATURE,
+    OUTDOOR_RECHECK_SECONDS,
 )
+from .runtime.outdoor import observation_is_fresh
 from .weather import build_forecast_payload, condition_weather, display_location_name
 
 if TYPE_CHECKING:
@@ -72,10 +75,20 @@ def register_outdoor_updates(
     outdoor_entity_id: str | None,
     weather_entity_id: str | None,
 ) -> list[Callable[[], None]]:
-    """Project configured HA states into the thermostat's outdoor observation."""
+    """Project configured HA states into the thermostat's outdoor observation.
 
-    @callback
-    def update_outdoor_temperature(*_: Any) -> None:
+    The override sensor wins while it is fresh; when it stops reporting, a fresh
+    weather entity takes over. When neither is fresh, the most preferred usable
+    source is kept (and reported stale) so diagnostics still show its last value.
+    Sources are re-checked on every state event and on a short timer, because a
+    source going quiet produces no event of its own.
+    """
+
+    runtime.outdoor_sources_configured = True
+    last_projection: tuple[Any, ...] | None = None
+    last_published_fresh: bool | None = None
+
+    def select_projection() -> tuple[Any, ...] | None:
         weather_state = hass.states.get(weather_entity_id) if weather_entity_id else None
         weather_humidity = (
             validated_humidity(weather_state.attributes.get("humidity"))
@@ -90,7 +103,7 @@ def register_outdoor_updates(
         weather_location = (
             display_location_name(weather_state.name) if weather_state is not None else None
         )
-        # The override sensor wins; the weather entity is the fallback source.
+        # Preference order: the override sensor, then the weather entity.
         sources = []
         if outdoor_entity_id:
             sensor = hass.states.get(outdoor_entity_id)
@@ -112,6 +125,8 @@ def register_outdoor_updates(
                     "weather_entity",
                 )
             )
+        now = dt_util.utcnow()
+        usable: list[tuple[Any, ...]] = []
         for state, value, unit, source in sources:
             if state.state in UNUSABLE_STATES:
                 continue
@@ -122,16 +137,48 @@ def register_outdoor_updates(
             humidity = validated_humidity(state.attributes.get("humidity"))
             if humidity is None and source == "override_sensor":
                 humidity = weather_humidity
-            runtime.async_set_outdoor_temperature(
+            projection = (
                 value_c,
                 weather_location or state.name,
+                humidity,
+                weather_item,
+                state.last_reported,
+                source,
+            )
+            if observation_is_fresh(state.last_reported, now=now):
+                return projection
+            usable.append(projection)
+        return usable[0] if usable else None
+
+    def project(projection: tuple[Any, ...] | None) -> None:
+        nonlocal last_projection, last_published_fresh
+        last_projection = projection
+        if projection is None:
+            runtime.async_set_outdoor_temperature(None, "Local weather unavailable")
+        else:
+            value_c, name, humidity, weather, observed_at, source = projection
+            runtime.async_set_outdoor_temperature(
+                value_c,
+                name,
                 humidity_percent=humidity,
-                weather=weather_item,
-                observed_at=state.last_reported,
+                weather=weather,
+                observed_at=observed_at,
                 source=source,
             )
-            return
-        runtime.async_set_outdoor_temperature(None, "Local weather unavailable")
+        last_published_fresh = runtime.outdoor_is_fresh
+
+    @callback
+    def update_outdoor_temperature(*_: Any) -> None:
+        project(select_projection())
+
+    @callback
+    def recheck_outdoor_freshness(*_: Any) -> None:
+        # Time alone can make the projected source stale or another source the right
+        # choice. Publish only a real change (a different selection, or freshness
+        # expiring), so entities are not rewritten every minute.
+        projection = select_projection()
+        if projection != last_projection or runtime.outdoor_is_fresh != last_published_fresh:
+            project(projection)
 
     update_outdoor_temperature()
     source_entity_ids = [
@@ -140,6 +187,12 @@ def register_outdoor_updates(
     return [
         async_track_state_change_event(hass, source_entity_ids, update_outdoor_temperature),
         async_track_state_report_event(hass, source_entity_ids, update_outdoor_temperature),
+        async_track_time_interval(
+            hass,
+            recheck_outdoor_freshness,
+            timedelta(seconds=OUTDOOR_RECHECK_SECONDS),
+            name="Nuve Local outdoor freshness check",
+        ),
     ]
 
 

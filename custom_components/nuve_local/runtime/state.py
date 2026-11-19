@@ -60,6 +60,7 @@ class RuntimeState:
     bootstrap_settings_served: bool = False
     bootstrap_auto_served: bool = False
     authoritative_control_monitor_seen: bool = False
+    outdoor_sources_configured: bool = False
     _listeners: set[Callable[[], None]] = field(default_factory=set)
     _liveness_timer: OneShotTimer = field(default_factory=OneShotTimer, init=False, repr=False)
     _bootstrap_timer: OneShotTimer = field(default_factory=OneShotTimer, init=False, repr=False)

@@ -140,7 +140,7 @@ labels are unclear, and installer settings cannot be changed.
 
 | Source / field | Contract and cadence | HA disposition | Write / confirmation | Remaining risk |
 | --- | --- | --- | --- | --- |
-| current outdoor temperature | override sensor, else weather entity; finite °C; max age 15 min | input only + freshness D/Off | HA source event | Never emit missing as 0 |
+| current outdoor temperature | fresh override sensor, else fresh weather entity; finite °C; fresh = reported within 15 min | input only + freshness D/Off | HA source event, and a 60 s re-check | Never emit missing as 0; Repair after 5 min with no fresh source |
 | current outdoor humidity | weather humidity fallback, 0..100 %RH | input only | HA source event | Override temperature sensor may not carry humidity |
 | weather location/country/timezone | concise weather entity name; ISO country; seconds east UTC | input only | HA source event | Firmware truncates long titles |
 | current `main.temp_min/max` | validated today's low/high; missing elapsed bound uses current observation | input only | W cache | Bound fallback is observed, not a historical extreme |

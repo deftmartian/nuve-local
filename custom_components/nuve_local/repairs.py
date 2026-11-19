@@ -20,6 +20,7 @@ MONITOR_ISSUE = "monitor_authority_stale"
 PERSISTENCE_ISSUE = "persistence_problem"
 UNCERTAIN_ISSUE = "uncertain_command_outcome"
 SCHEDULE_ISSUE = "schedule_authority_block"
+OUTDOOR_ISSUE = "outdoor_data_stale"
 
 ISSUE_KINDS = frozenset(
     {
@@ -29,9 +30,10 @@ ISSUE_KINDS = frozenset(
         PERSISTENCE_ISSUE,
         UNCERTAIN_ISSUE,
         SCHEDULE_ISSUE,
+        OUTDOOR_ISSUE,
     }
 )
-GRACED_ISSUES = frozenset({BASELINE_ISSUE, MONITOR_ISSUE, SCHEDULE_ISSUE})
+GRACED_ISSUES = frozenset({BASELINE_ISSUE, MONITOR_ISSUE, SCHEDULE_ISSUE, OUTDOOR_ISSUE})
 
 
 ISSUE_SEVERITIES = {
@@ -41,6 +43,7 @@ ISSUE_SEVERITIES = {
     PERSISTENCE_ISSUE: ir.IssueSeverity.ERROR,
     UNCERTAIN_ISSUE: ir.IssueSeverity.ERROR,
     SCHEDULE_ISSUE: ir.IssueSeverity.WARNING,
+    OUTDOOR_ISSUE: ir.IssueSeverity.WARNING,
 }
 
 
@@ -56,6 +59,10 @@ def repair_conditions(runtime: NuveRuntime) -> frozenset[str]:
         issues.add(PERSISTENCE_ISSUE)
     if runtime.uncertain_outcome:
         issues.add(UNCERTAIN_ISSUE)
+    # The thermostat uses outdoor data for its own logic whether or not Home
+    # Assistant control is enabled, so this is reported before the control gate.
+    if runtime.outdoor_sources_configured and not runtime.outdoor_is_fresh:
+        issues.add(OUTDOOR_ISSUE)
 
     firmware = runtime.baseline_firmware_version
     configured_firmware = runtime.bootstrap_firmware_version
