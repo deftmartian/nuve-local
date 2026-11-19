@@ -175,7 +175,11 @@ Adapt the addresses and certificate settings to your network. The Nuve Local
 upstream is HTTP; do not add TLS, a CA, or a server name to it.
 
 For direct TLS, put the certificate and key where Home Assistant can read them. The
-listener starts when you create the integration entry.
+listener starts when you create the integration entry. Renew them in place at the
+same paths: the listener checks the files hourly and serves a renewed pair to new
+connections without a restart. If the new pair cannot be loaded (for example a
+certificate without its matching key mid-renewal), it keeps the current pair, logs a
+warning, and retries at the next check.
 
 ### Prepare DNS and firewall rules
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import copy
 import hmac
 import json
@@ -20,13 +21,14 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 
 from .auth import extract_bearer_token, is_allowed_source, is_expected_host, token_sha256
-from .certificate import async_create_ssl_context
+from .certificate import ReloadableCertificate, async_load_certificate
 from .commissioning import (
     deployment_profile,
     pairing_window_is_open,
     thermostat_https_authority,
 )
 from .const import (
+    CERTIFICATE_RELOAD_INTERVAL_SECONDS,
     CONF_API_HOSTNAME,
     CONF_CERTIFICATE,
     CONF_CONTRACTOR_BRAND,
@@ -69,14 +71,14 @@ _LOGGER = logging.getLogger(__name__)
 _REQUEST_TOKEN_FINGERPRINT = web.RequestKey("nuve_token_fingerprint", str)
 
 
-async def _async_listener_ssl_context(
+async def _async_listener_certificate(
     hass: HomeAssistant, config: dict[str, Any]
-) -> ssl.SSLContext | None:
+) -> ReloadableCertificate | None:
     """Return TLS only when Home Assistant is the thermostat-facing endpoint."""
 
     if deployment_profile(config) != DEPLOYMENT_PROFILE_DIRECT_TLS:
         return None
-    return await async_create_ssl_context(
+    return await async_load_certificate(
         hass,
         config.get(CONF_CERTIFICATE, ""),
         config.get(CONF_PRIVATE_KEY, ""),
@@ -139,6 +141,8 @@ class NuveApiServer:
         self._config = config
         self._baseline_store = baseline_store
         self._runner: web.AppRunner | None = None
+        self._certificate: ReloadableCertificate | None = None
+        self._certificate_watch: asyncio.Task[None] | None = None
         self._token_lock = asyncio.Lock()
         self._request_slots = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
         self._logged_first_settings_upload = False
@@ -156,7 +160,7 @@ class NuveApiServer:
     async def async_start(self) -> None:
         """Start the profile-specific dedicated listener."""
 
-        ssl_context = await _async_listener_ssl_context(self._hass, self._config)
+        certificate = await _async_listener_certificate(self._hass, self._config)
 
         app = self._create_app()
 
@@ -166,7 +170,7 @@ class NuveApiServer:
             self._runner,
             self._config[CONF_LISTEN_HOST],
             self._config[CONF_LISTEN_PORT],
-            ssl_context=ssl_context,
+            ssl_context=certificate.context if certificate is not None else None,
         )
         try:
             await site.start()
@@ -174,6 +178,11 @@ class NuveApiServer:
             await self._runner.cleanup()
             self._runner = None
             raise
+        if certificate is not None:
+            self._certificate = certificate
+            self._certificate_watch = asyncio.create_task(
+                self._async_watch_certificate(), name="nuve_local certificate reload"
+            )
         _LOGGER.info(
             "Nuve local listener started on %s:%s",
             self._config[CONF_LISTEN_HOST],
@@ -205,8 +214,41 @@ class NuveApiServer:
         app.router.add_route("*", "/{tail:.*}", self._unknown)
         return app
 
+    async def _async_watch_certificate(self) -> None:
+        """Pick up a renewed direct-TLS certificate without restarting the listener."""
+
+        while True:
+            await asyncio.sleep(CERTIFICATE_RELOAD_INTERVAL_SECONDS)
+            await self.async_reload_certificate_if_changed()
+
+    async def async_reload_certificate_if_changed(self) -> bool:
+        """Load changed certificate files; keep serving the current pair on error."""
+
+        certificate = self._certificate
+        if certificate is None:
+            return False
+        try:
+            reloaded = await self._hass.async_add_executor_job(certificate.reload_if_changed)
+        except (OSError, ssl.SSLError) as err:
+            _LOGGER.warning(
+                "Nuve local listener kept its current TLS certificate because the "
+                "configured certificate files could not be loaded: %s",
+                err,
+            )
+            return False
+        if reloaded:
+            _LOGGER.info("Nuve local listener loaded a renewed TLS certificate")
+        return reloaded
+
     async def async_stop(self) -> None:
         """Stop the listener and release its socket."""
+
+        if self._certificate_watch is not None:
+            self._certificate_watch.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await self._certificate_watch
+            self._certificate_watch = None
+        self._certificate = None
 
         if self._runner is not None:
             await self._runner.cleanup()
