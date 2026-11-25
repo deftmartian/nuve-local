@@ -21,7 +21,7 @@ concurrency:
 
 env:
   # renovate: datasource=github-releases depName=astral-sh/uv
-  UV_VERSION: "0.13.7"
+  UV_VERSION: "0.13.9"
   UV_PYTHON_PREFERENCE: only-managed
 
 jobs:
