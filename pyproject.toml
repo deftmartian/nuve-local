@@ -8,11 +8,11 @@ dev = [
   # Keep in step with homeassistant: it pins cryptography exactly, so a newer
   # release makes the lock unsatisfiable. Raise only with a homeassistant bump.
   "cryptography==50.0.2",
-  "homeassistant==2026.11.1",
+  "homeassistant==2026.11.2",
   "pyright==1.1.414",
   "pytest==9.2.0",
   "pytest-cov==7.1.0",
-  "ruff==0.17.4",
+  "ruff==0.17.5",
 ]
 
 [tool.pytest.ini_options]
